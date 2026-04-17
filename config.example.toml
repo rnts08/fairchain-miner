@@ -1,8 +1,13 @@
 # Fairchain Miner Configuration
 # Copy this to config.toml and customize
 
-# Node RPC connection
+# Node RPC connection (for solo mining)
 rpc_address = "http://127.0.0.1:19335"
+
+# Stratum pool URL (for pool mining)
+# Format: stratum+tcp://user:password@poolhost:port
+# Example: stratum+tcp://myworker@stratum.example.com:3333
+stratum_url = ""
 
 # Performance settings
 # Set workers to 0 to use all available CPU cores automatically

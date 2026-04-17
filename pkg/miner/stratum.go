@@ -13,59 +13,72 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/bams-repo/fairchain/internal/algorithms"
+	"github.com/bams-repo/fairchain/internal/crypto"
 	"github.com/bams-repo/fairchain/internal/types"
 )
 
 // StratumClient implements Stratum V1 pool mining client
 type StratumClient struct {
-	conn     net.Conn
-	host     string
-	user     string
-	pass     string
-	hasher   algorithms.Hasher
-	miner    *Miner
+	conn   net.Conn
+	host   string
+	user   string
+	pass   string
+	hasher algorithms.Hasher
+	miner  *Miner
 
-	extranonce1  string
+	extranonce1     string
 	extranonce2size int
-	difficulty   float64
-	nextID       uint64
+	difficulty      float64
+	nextID          uint64
 
 	currentJob atomic.Value // *StratumJob
 
 	connected atomic.Bool
 	authOK    atomic.Bool
 
-	onNewJob   func(*StratumJob)
-	onShare    func(bool, uint64)
+	onNewJob func(*StratumJob)
+	onShare  func(bool, uint64)
 }
 
 // StratumJob represents an active mining job from pool
 type StratumJob struct {
-	ID         string
-	PrevBlock  types.Hash
-	Coinbase1  []byte
-	Coinbase2  []byte
+	ID           string
+	PrevBlock    types.Hash
+	Coinbase1    []byte
+	Coinbase2    []byte
 	MerkleBranch []types.Hash
-	Version    uint32
-	Bits       uint32
-	Timestamp  uint32
-	CleanJobs  bool
+	Version      uint32
+	Bits         uint32
+	Timestamp    uint32
+	CleanJobs    bool
 
-	target     types.Hash
+	target types.Hash
 }
 
 // NewStratumClient creates a stratum client
 func NewStratumClient(host, user, pass string, m *Miner, h algorithms.Hasher) *StratumClient {
 	return &StratumClient{
-		host:     host,
-		user:     user,
-		pass:     pass,
-		miner:    m,
-		hasher:   h,
+		host:   host,
+		user:   user,
+		pass:   pass,
+		miner:  m,
+		hasher: h,
 	}
+}
+
+// SetOnShare sets the callback for share results
+func (sc *StratumClient) SetOnShare(f func(bool, uint64)) {
+	sc.onShare = f
+}
+
+// SetOnNewJob sets the callback for new job notifications
+func (sc *StratumClient) SetOnNewJob(f func(*StratumJob)) {
+	sc.onNewJob = f
 }
 
 // Connect establishes connection to stratum pool
@@ -78,7 +91,10 @@ func (sc *StratumClient) Connect(ctx context.Context) error {
 	sc.conn = conn
 	sc.connected.Store(true)
 
-	go sc.readLoop(ctx)
+	// NOTE: We do NOT start readLoop here
+	// The server sends notifications AFTER the subscribe response
+	// We need to receive them in the request() loop, not in a separate goroutine
+	// Start readLoop AFTER handshake completes
 	return sc.handshake()
 }
 
@@ -86,7 +102,12 @@ func (sc *StratumClient) handshake() error {
 	if err := sc.subscribe(); err != nil {
 		return err
 	}
-	return sc.authorize()
+	if err := sc.authorize(); err != nil {
+		return err
+	}
+	// Start readLoop after handshake - now notifications will come
+	go sc.readLoop(context.Background())
+	return nil
 }
 
 func (sc *StratumClient) subscribe() error {
@@ -104,13 +125,17 @@ func (sc *StratumClient) subscribe() error {
 
 	result, ok := resp.Result.([]interface{})
 	if !ok || len(result) < 3 {
-		return fmt.Errorf("invalid subscribe response")
+		return fmt.Errorf("invalid subscribe response: result=%v, len=%d", resp.Result, len(result))
 	}
 
-	sc.extranonce1, ok = result[1].(string)
+	// Response format: [[subscriptions], extranonce1, extranonce2_size]
+	// subscriptions is array of [method, subscription_id] pairs
+
+	extranonce1, ok := result[1].(string)
 	if !ok {
 		return fmt.Errorf("invalid extranonce1")
 	}
+	sc.extranonce1 = extranonce1
 
 	en2Size, ok := result[2].(float64)
 	if !ok {
@@ -154,16 +179,111 @@ func (sc *StratumClient) request(req map[string]interface{}) (*stratumResponse, 
 		return nil, err
 	}
 
-	scanner := bufio.NewScanner(sc.conn)
-	if scanner.Scan() {
-		var resp stratumResponse
-		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
-			return nil, err
+	// Get numeric request ID for comparison
+	var reqID float64
+	reqID = float64(req["id"].(uint64))
+	fmt.Printf("DEBUG: reqID set to %v (original type: %T)\n", reqID, req["id"])
+
+	// Read ALL available data - keep reading until timeout
+	// The server may send multiple messages
+	sc.conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+
+	buf := make([]byte, 0, 8192)
+	tmp := make([]byte, 4096)
+	for {
+		n, err := sc.conn.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
 		}
-		return &resp, nil
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Timeout is expected when server finishes sending
+				break
+			}
+			// Other error - might be EOF or close
+			break
+		}
 	}
 
-	return nil, scanner.Err()
+	fmt.Printf("DEBUG request: received %d bytes\n", len(buf))
+
+	// Print first part of raw data
+	if len(buf) > 0 {
+		showLen := len(buf)
+		if showLen > 200 {
+			showLen = 200
+		}
+		fmt.Printf("DEBUG request: raw start: %s\n", string(buf[:showLen]))
+	}
+
+	// Process each line separately
+	lines := splitLines(string(buf))
+	fmt.Printf("DEBUG request: got %d lines\n", len(lines))
+
+	var response *stratumResponse
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var msg stratumResponse
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+
+		// Handle notifications - server sends them before the response
+		// But don't skip looking for response after handling them
+		hasMethod := msg.Method != ""
+
+		if hasMethod {
+			sc.handleNotification(&msg)
+			// Don't continue - still need to find the response
+		}
+
+		// Check ID match for response
+		idMatched := false
+
+		// Only consider as response if:
+		// 1. Has no method (not a notification), AND
+		// 2. Has matching ID (or null ID which some servers use)
+		if !hasMethod {
+			fmt.Printf("DEBUG: checking response ID=%v (want %v), Method=%q\n", msg.ID, reqID, msg.Method)
+			if msg.ID == nil {
+				// null ID can be a response
+				idMatched = true
+			} else if id, ok := msg.ID.(float64); ok {
+				idMatched = (id == reqID)
+			}
+
+			if idMatched {
+				response = &msg
+				break
+			}
+		}
+	}
+
+	if response != nil {
+		return response, nil
+	}
+
+	return nil, fmt.Errorf("no matching response found")
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
 }
 
 func (sc *StratumClient) readLoop(ctx context.Context) {
@@ -237,7 +357,8 @@ func (sc *StratumClient) handleJob(msg *stratumResponse) {
 	var ntime uint32
 	fmt.Sscanf(ntimeHex, "%x", &ntime)
 
-	target := difficultyToTarget(sc.difficulty)
+	// Use bits to compute target (not difficulty, which may be wrong)
+	target := crypto.CompactToHash(bits)
 
 	job := &StratumJob{
 		ID:           jobID,

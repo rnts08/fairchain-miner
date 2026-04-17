@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,16 +39,20 @@ type blockInfo struct {
 }
 
 type Config struct {
-	RPCAddr string `toml:"rpc_address"`
-	Workers int    `toml:"workers"`
-	Power   int    `toml:"power_limit"`
+	RPCAddr     string `toml:"rpc_address"`
+	StratumURL  string `toml:"stratum_url"`
+	StratumPort int    `toml:"stratum_port"`
+	Workers     int    `toml:"workers"`
+	Power       int    `toml:"power_limit"`
 }
 
 func loadConfig(path string) (*Config, error) {
 	cfg := &Config{
-		RPCAddr: "http://127.0.0.1:19335",
-		Workers: runtime.NumCPU(),
-		Power:   100,
+		RPCAddr:     "http://127.0.0.1:19335",
+		StratumURL:  "",
+		StratumPort: 3333,
+		Workers:     runtime.NumCPU(),
+		Power:       100,
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return cfg, nil
@@ -56,7 +61,6 @@ func loadConfig(path string) (*Config, error) {
 	return cfg, err
 }
 
-
 func main() {
 	cfg, err := loadConfig("config.toml")
 	if err != nil {
@@ -64,11 +68,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	rpcAddr := flag.String("rpc", cfg.RPCAddr, "Node RPC address")
+	rpcAddr := flag.String("rpc", "", "Node RPC address (for solo mining)")
+	stratum := flag.String("stratum", "", "Stratum pool URL (e.g., stratum+tcp://user:pass@host:port)")
 	workers := flag.Int("workers", cfg.Workers, "Number of mining threads")
 	power := flag.Int("power", cfg.Power, "CPU power limit percentage (1-100)")
 	simulate := flag.Bool("t", false, "Run in offline simulation mode")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nMining modes: use either -rpc for solo mining or -stratum for pool mining (not both)\n")
+	}
 	flag.Parse()
+
+	if *rpcAddr != "" && *stratum != "" {
+		fmt.Fprintf(os.Stderr, "Error: cannot use both -rpc and -stratum flags\n")
+		os.Exit(1)
+	}
+	if *rpcAddr == "" && *stratum == "" && !*simulate {
+		fmt.Fprintf(os.Stderr, "Error: must specify -rpc, -stratum, or -t (simulation)\n")
+		os.Exit(1)
+	}
 
 	h, err := algorithms.GetHasher(coinparams.Algorithm)
 	if err != nil {
@@ -93,13 +113,26 @@ func main() {
 	m.StartHashrateMonitor(ctx)
 
 	if *simulate {
-		// Run TUI simulation mode
-		runTUI(true, *rpcAddr, *workers, *power)
+		runTUI(*simulate, *rpcAddr, *workers, *power)
 		return
 	}
 
-	fmt.Printf("fairchain-miner: algo=%s workers=%d power=%d%% rpc=%s\n\n",
-		coinparams.Algorithm, m.Workers(), m.PowerLimit(), *rpcAddr)
+	if *stratum != "" {
+		stratumURL := *stratum
+		if err := runStratumMining(ctx, m, h, stratumURL, *workers); err != nil {
+			fmt.Fprintf(os.Stderr, "stratum mining error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *stratum != "" {
+		fmt.Printf("fairchain-miner: algo=%s workers=%d power=%d%% stratum=%s\n\n",
+			coinparams.Algorithm, m.Workers(), m.PowerLimit(), *stratum)
+	} else {
+		fmt.Printf("fairchain-miner: algo=%s workers=%d power=%d%% rpc=%s\n\n",
+			coinparams.Algorithm, m.Workers(), m.PowerLimit(), *rpcAddr)
+	}
 
 	var totalBlocks uint64
 	startTime := time.Now()
@@ -127,7 +160,27 @@ func main() {
 		}
 
 		var bits uint32
-		fmt.Sscanf(ci.Bits, "%x", &bits)
+		// Parse bits - supports both hex string and decimal integer formats from RPC
+		n, err := fmt.Sscanf(ci.Bits, "%x", &bits)
+		if err != nil || n != 1 {
+			// Try parsing as decimal integer
+			var bitsInt uint32
+			n2, err2 := fmt.Sscanf(ci.Bits, "%d", &bitsInt)
+			if err2 != nil || n2 != 1 {
+				fmt.Fprintf(os.Stderr, "invalid bits value: %q (expected hex or decimal)\n", ci.Bits)
+				sleep(ctx, 1*time.Second)
+				continue
+			}
+			bits = bitsInt
+		}
+
+		// Validate bits value
+		if bits == 0 || bits > 0x20ffffff {
+			fmt.Fprintf(os.Stderr, "invalid bits value: 0x%08x (out of valid range)\n", bits)
+			sleep(ctx, 1*time.Second)
+			continue
+		}
+
 		newHeight := ci.Height + 1
 
 		blockTimestamp := uint32(time.Now().Unix())
@@ -140,11 +193,11 @@ func main() {
 
 		block := &types.Block{
 			Header: types.BlockHeader{
-				Version:    1,
-				PrevBlock:  prevHash,
-				Timestamp:  blockTimestamp,
-				Bits:       bits,
-				Nonce:      0,
+				Version:   1,
+				PrevBlock: prevHash,
+				Timestamp: blockTimestamp,
+				Bits:      bits,
+				Nonce:     0,
 			},
 			Transactions: []types.Transaction{cb},
 		}
@@ -203,8 +256,6 @@ func main() {
 	fmt.Printf("\nfairchain-miner stopped. mined %d blocks in %s\n",
 		totalBlocks, time.Since(startTime).Round(time.Second))
 }
-
-
 
 func makeCoinbaseTx(height uint32, subsidy uint64) types.Transaction {
 	pushLen := minimalHeightPushLen(height)
@@ -315,4 +366,99 @@ func sleep(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-time.After(d):
 	}
+}
+
+func parseStratumURL(stratumURL string) (host, user, pass string, err error) {
+	stratumURL = strings.TrimPrefix(stratumURL, "stratum+tcp://")
+	parts := strings.Split(stratumURL, "@")
+	if len(parts) == 2 {
+		userPass := strings.Split(parts[0], ":")
+		if len(userPass) == 2 {
+			user = userPass[0]
+			pass = userPass[1]
+		} else {
+			user = parts[0]
+			pass = "x"
+		}
+		host = parts[1]
+	} else {
+		host = stratumURL
+		user = "standalone"
+		pass = "x"
+	}
+	if !strings.Contains(host, ":") {
+		host = host + ":3333"
+	}
+	return host, user, pass, nil
+}
+
+func runStratumMining(ctx context.Context, m *miner.Miner, h algorithms.Hasher, stratumURL string, workers int) error {
+	host, user, pass, err := parseStratumURL(stratumURL)
+	if err != nil {
+		return fmt.Errorf("invalid stratum URL: %v", err)
+	}
+
+	fmt.Printf("Connecting to stratum server: %s\n", host)
+	fmt.Printf("User: %s, Workers: %d\n", user, workers)
+
+	sc := miner.NewStratumClient(host, user, pass, m, h)
+	if err := sc.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to stratum server: %v", err)
+	}
+	defer sc.Close()
+
+	fmt.Println("Stratum session established")
+
+	var shares, rejects uint64
+	sc.SetOnShare(func(accepted bool, _ uint64) {
+		if accepted {
+			shares++
+		} else {
+			rejects++
+		}
+	})
+
+	m.StartHashrateMonitor(ctx)
+
+	var totalShares uint64
+	startTime := time.Now()
+
+	fmt.Println("Waiting for first job...")
+
+	for ctx.Err() == nil {
+		job := sc.CurrentJob()
+		if job == nil {
+			fmt.Printf("  no job yet, sleeping...\n")
+			sleep(ctx, 1*time.Second)
+			continue
+		}
+
+		fmt.Printf("Got first job: %s\n", job.ID)
+
+		hashrateStr := ""
+		if m.HashrateReady() {
+			hashrateStr = fmt.Sprintf(" hashrate=%.1f H/s", float64(m.Hashrate()))
+		}
+		fmt.Printf("Mining job %s%s\n", job.ID, hashrateStr)
+
+		found, nonce, hashes := m.MineStratumJob(ctx, *job, workers)
+
+		if !found {
+			continue
+		}
+
+		extraNonce := uint32(hashes % 0xFFFFFFFF)
+		if err := sc.SubmitShare(job, nonce, job.Timestamp, extraNonce); err != nil {
+			fmt.Printf("Share rejected: %v\n", err)
+			continue
+		}
+
+		totalShares++
+		fmt.Printf("Share accepted! nonce=%d total=%d rejects=%d\n",
+			nonce, totalShares, rejects)
+	}
+
+	fmt.Printf("\nStratum mining stopped. shares=%d rejects=%d uptime=%s\n",
+		totalShares, rejects, time.Since(startTime).Round(time.Second))
+	return nil
 }

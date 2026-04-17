@@ -6,20 +6,22 @@ package miner
 
 import (
 	"context"
+	"encoding/binary"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/bams-repo/fairchain/internal/algorithms"
+	"github.com/bams-repo/fairchain/internal/crypto"
 	"github.com/bams-repo/fairchain/internal/types"
 )
 
 // Miner is a standalone proof-of-work miner that searches for valid nonces
 // It has no node dependencies, works only with BlockHeader and Target
 type Miner struct {
-	hasher    algorithms.Hasher
-	workers   int
+	hasher     algorithms.Hasher
+	workers    int
 	powerLimit atomic.Int32
 
 	hashCount     atomic.Uint64
@@ -204,7 +206,7 @@ func (m *Miner) MineHeader(ctx context.Context, header types.BlockHeader, target
 					hashCount.Add(1)
 
 					targetHash := types.Hash(target)
-	if hash.LessOrEqual(targetHash) {
+					if hash.LessOrEqual(targetHash) {
 						select {
 						case resultCh <- result{nonce: wHeader.Nonce}:
 						default:
@@ -229,6 +231,126 @@ func (m *Miner) MineHeader(ctx context.Context, header types.BlockHeader, target
 				}
 			}
 		}(header, startNonce, endNonce)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	res, ok := <-resultCh
+	workerCancel()
+	wg.Wait()
+
+	totalHashes := hashCount.Load()
+	m.hashCount.Add(totalHashes)
+
+	if ok {
+		return true, res.nonce, totalHashes
+	}
+
+	return false, 0, totalHashes
+}
+
+// MineStratumJob searches for a valid nonce for a stratum job
+func (m *Miner) MineStratumJob(ctx context.Context, job StratumJob, workers int) (found bool, nonce uint32, hashes uint64) {
+	if workers <= 0 {
+		workers = m.workers
+	}
+
+	rangeSize := uint64(0x100000000) / uint64(workers)
+	batchSize := uint64(4)
+	if m.hasher.Name() == "sha256mem" {
+		batchSize = 32
+	}
+
+	type result struct {
+		nonce uint32
+	}
+
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	defer workerCancel()
+
+	resultCh := make(chan result, 1)
+	var wg sync.WaitGroup
+	var hashCount atomic.Uint64
+
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		startNonce := uint64(w) * rangeSize
+		endNonce := startNonce + rangeSize
+		if w == workers-1 {
+			endNonce = 0x100000000
+		}
+
+		go func(wJob StratumJob, start, end uint64) {
+			defer wg.Done()
+
+			extraNonce := make([]byte, 4)
+			binary.BigEndian.PutUint32(extraNonce, uint32(start))
+
+			coinbase := make([]byte, 0, len(wJob.Coinbase1)+len(extraNonce)+len(wJob.Coinbase2))
+			coinbase = append(coinbase, wJob.Coinbase1...)
+			coinbase = append(coinbase, extraNonce...)
+			coinbase = append(coinbase, wJob.Coinbase2...)
+
+			merkleRoot := crypto.ComputeMerkleRootFromCoinbase(coinbase, wJob.MerkleBranch)
+
+			header := types.BlockHeader{
+				Version:    wJob.Version,
+				PrevBlock:  wJob.PrevBlock,
+				MerkleRoot: merkleRoot,
+				Timestamp:  wJob.Timestamp,
+				Bits:       wJob.Bits,
+				Nonce:      uint32(start),
+			}
+			pos := start
+
+			for pos < end {
+				select {
+				case <-workerCtx.Done():
+					return
+				default:
+				}
+
+				remaining := end - pos
+				batch := batchSize
+				if remaining < batch {
+					batch = remaining
+				}
+
+				batchStart := time.Now()
+
+				for i := uint64(0); i < batch; i++ {
+					hdrBytes := header.SerializeToBytes()
+					hash := m.hasher.PoWHash(hdrBytes)
+					hashCount.Add(1)
+
+					targetHash := types.Hash(wJob.target)
+					if hash.LessOrEqual(targetHash) {
+						select {
+						case resultCh <- result{nonce: header.Nonce}:
+						default:
+						}
+						workerCancel()
+						return
+					}
+
+					header.Nonce++
+					if header.Nonce == 0 {
+						return
+					}
+				}
+
+				pos += batch
+
+				if pct := int(m.powerLimit.Load()); pct < 100 {
+					elapsed := time.Since(batchStart)
+					sleepRatio := float64(100-pct) / float64(pct)
+					time.Sleep(time.Duration(float64(elapsed) * sleepRatio))
+				}
+			}
+		}(job, startNonce, endNonce)
 	}
 
 	go func() {

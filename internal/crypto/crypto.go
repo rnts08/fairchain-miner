@@ -13,6 +13,42 @@ func HashBlockHeader(hdr *types.BlockHeader) types.Hash {
 	return sha256.Sum256(first[:])
 }
 
+// ComputeMerkleRootFromCoinbase computes merkle root from coinbase tx and merkle branch
+func ComputeMerkleRootFromCoinbase(coinbase []byte, merkleBranch []types.Hash) types.Hash {
+	first := sha256.Sum256(coinbase)
+	coinbaseHash := sha256.Sum256(first[:])
+
+	if len(merkleBranch) == 0 {
+		var h types.Hash
+		copy(h[:], coinbaseHash[:])
+		return h
+	}
+
+	hashes := make([]types.Hash, 0, len(merkleBranch)+1)
+	var h types.Hash
+	copy(h[:], coinbaseHash[:])
+	hashes = append(hashes, h)
+	hashes = append(hashes, merkleBranch...)
+
+	for len(hashes) > 1 {
+		next := make([]types.Hash, (len(hashes)+1)/2)
+		for i := 0; i < len(hashes); i += 2 {
+			if i+1 == len(hashes) {
+				next[i/2] = hashes[i]
+			} else {
+				var buf [64]byte
+				copy(buf[:32], hashes[i][:])
+				copy(buf[32:], hashes[i+1][:])
+				first := sha256.Sum256(buf[:])
+				next[i/2] = sha256.Sum256(first[:])
+			}
+		}
+		hashes = next
+	}
+
+	return hashes[0]
+}
+
 // ComputeMerkleRoot computes merkle root from transactions
 func ComputeMerkleRoot(txs []types.Transaction) (types.Hash, error) {
 	if len(txs) == 0 {
