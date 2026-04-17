@@ -1,0 +1,11 @@
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+.opencode
+
+# Binaries
+fairchain-miner
+fairchain-miner-tui
