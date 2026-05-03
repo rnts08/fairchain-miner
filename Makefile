@@ -1,31 +1,59 @@
-# Fairchain Miner
+.PHONY: all build build-asm build-cuda build-opencl test bench lint fmt tidy clean
 
-VERSION := 1.0.0
-COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
+MODULE := $(shell grep '^module' go.mod | awk '{print $$2}')
+BINDIR := bin
+BINARY := fairchain-miner
+GO     ?= go
 
-GO_BUILD := go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)"
+# --- Default target ---
+all: build
 
-all: cli tui
+# --- Build targets ---
+build:
+	$(GO) build -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
-cli:
-	$(GO_BUILD) -o fairchain-miner ./cmd
+build-asm:
+	$(GO) build -tags shani -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
-tui:
-	$(GO_BUILD) -tags tui -o fairchain-miner-tui ./cmd
+build-cuda:
+	$(GO) build -tags cuda -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
-debug:
-	$(GO_BUILD) -gcflags "all=-N -l" -o fairchain-miner ./cmd
+build-opencl:
+	$(GO) build -tags opencl -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
-debug-tui:
-	$(GO_BUILD) -tags tui -gcflags "all=-N -l" -o fairchain-miner-tui ./cmd
-
-clean:
-	rm -f fairchain-miner fairchain-miner-tui
-
-install: all
-	cp fairchain-miner fairchain-miner-tui /usr/local/bin/
-
+# --- Test / Bench / Lint ---
 test:
-	go test ./pkg/miner
+	$(GO) test ./... -v -count=1
 
-.PHONY: all cli tui debug debug-tui clean install test
+test-short:
+	$(GO) test ./... -count=1
+
+bench:
+	$(GO) test ./pkg/algorithm/ -bench=. -benchmem -count=3
+
+bench-all:
+	$(GO) test ./... -bench=. -benchmem
+
+lint:
+	$(GO) vet ./...
+
+fmt:
+	gofmt -w .
+
+tidy:
+	$(GO) mod tidy
+
+# --- Run targets ---
+run-benchmark:
+	$(BINDIR)/$(BINARY) --benchmark --workers 0 --duration 30s
+
+run-regtest:
+	$(BINDIR)/$(BINARY) --rpc http://127.0.0.1:19445
+
+run-testnet:
+	$(BINDIR)/$(BINARY) --rpc http://127.0.0.1:19335
+
+# --- Clean ---
+clean:
+	rm -rf $(BINDIR)
+	$(GO) clean ./...

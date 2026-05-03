@@ -5,6 +5,9 @@
 .idea/
 .vscode/
 .opencode
+.antigravity
+.cursor
+.codex
 
 # Binaries
 fairchain-miner
