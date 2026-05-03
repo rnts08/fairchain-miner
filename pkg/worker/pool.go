@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
+	"github.com/bams-repo/fairchain-miner/pkg/memory"
 	"github.com/bams-repo/fairchain-miner/pkg/metrics"
 	"github.com/bams-repo/fairchain-miner/pkg/template"
 	"github.com/bams-repo/fairchain-miner/pkg/types"
@@ -99,8 +100,9 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 			// P5.4: Set CPU affinity to pin the worker to a specific core.
 			_ = SetAffinity(workerID)
 
-			// Each worker gets its own workspace to avoid allocations.
-			ws := algorithm.NewWorkspace()
+			// P5.3: Set NUMA-aware allocation.
+			node := memory.GetNodeForCPU(workerID)
+			ws := algorithm.NewWorkspaceOnNode(node)
 
 			// Each worker gets its own copy of the header bytes to stamp nonces into.
 			var headerBuf [types.BlockHeaderSize]byte
@@ -171,11 +173,13 @@ func (p *Pool) RunBenchmark(ctx context.Context, hasher *algorithm.Hasher, input
 
 	for w := 0; w < p.numWorkers; w++ {
 		wg.Add(1)
-		go func() {
+		go func(workerID int) {
 			defer wg.Done()
 
-			// Each worker gets its own workspace.
-			ws := algorithm.NewWorkspace()
+			// Each worker gets its own NUMA-aware workspace.
+			_ = SetAffinity(workerID)
+			node := memory.GetNodeForCPU(workerID)
+			ws := algorithm.NewWorkspaceOnNode(node)
 
 			// Each worker hashes with incrementing nonce-like data.
 			var buf [80]byte
@@ -203,7 +207,7 @@ func (p *Pool) RunBenchmark(ctx context.Context, hasher *algorithm.Hasher, input
 					}
 				}
 			}
-		}()
+		}(w)
 	}
 
 	wg.Wait()

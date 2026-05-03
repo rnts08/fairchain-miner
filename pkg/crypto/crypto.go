@@ -2,7 +2,7 @@ package crypto
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
+	"math/big"
 
 	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
@@ -56,25 +56,23 @@ func ComputeMerkleRoot(txs []types.Transaction) (types.Hash, error) {
 	}
 
 	hashes := make([]types.Hash, len(txs))
-	for i := range txs {
-		// Simplified: just hash tx index for demo
-		b := make([]byte, 4)
-		binary.LittleEndian.PutUint32(b, uint32(i))
-		hashes[i] = sha256.Sum256(b)
+	for i, tx := range txs {
+		data := tx.SerializeToBytes()
+		first := sha256.Sum256(data)
+		hashes[i] = sha256.Sum256(first[:])
 	}
 
 	for len(hashes) > 1 {
-		next := make([]types.Hash, (len(hashes)+1)/2)
+		if len(hashes)%2 != 0 {
+			hashes = append(hashes, hashes[len(hashes)-1])
+		}
+		next := make([]types.Hash, len(hashes)/2)
 		for i := 0; i < len(hashes); i += 2 {
-			if i+1 == len(hashes) {
-				next[i/2] = hashes[i]
-			} else {
-				var buf [64]byte
-				copy(buf[:32], hashes[i][:])
-				copy(buf[32:], hashes[i+1][:])
-				first := sha256.Sum256(buf[:])
-				next[i/2] = sha256.Sum256(first[:])
-			}
+			var buf [64]byte
+			copy(buf[:32], hashes[i][:])
+			copy(buf[32:], hashes[i+1][:])
+			first := sha256.Sum256(buf[:])
+			next[i/2] = sha256.Sum256(first[:])
 		}
 		hashes = next
 	}
@@ -82,16 +80,30 @@ func ComputeMerkleRoot(txs []types.Transaction) (types.Hash, error) {
 	return hashes[0], nil
 }
 
-// CompactToHash converts compact bits format to target hash
-func CompactToHash(bits uint32) types.Hash {
-	size := bits >> 24
-	word := bits & 0x007fffff
+// CompactToHash converts compact bits format to target hash.
+func CompactToHash(compact uint32) types.Hash {
+	mantissa := compact & 0x007fffff
+	exponent := compact >> 24
 
-	var target types.Hash
-	if size >= 3 {
-		binary.LittleEndian.PutUint32(target[32-size:], word)
+	var targetInt big.Int
+	if exponent <= 3 {
+		mantissa >>= 8 * (3 - exponent)
+		targetInt.SetInt64(int64(mantissa))
+	} else {
+		targetInt.SetInt64(int64(mantissa))
+		targetInt.Lsh(&targetInt, 8*(uint(exponent)-3))
 	}
-	return target
+
+	b := targetInt.Bytes()
+	var h types.Hash
+	// Target is in little-endian internal byte order for PoWHash comparison.
+	for i, j := 0, len(b)-1; j >= 0; i, j = i+1, j-1 {
+		if i >= 32 {
+			break
+		}
+		h[i] = b[j]
+	}
+	return h
 }
 
 // CalcWork calculates expected work from bits

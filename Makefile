@@ -10,16 +10,21 @@ all: build
 
 # --- Build targets ---
 build:
-	$(GO) build -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
+	mkdir -p $(BINDIR)
+	$(GO) build -v -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
-build-asm:
-	$(GO) build -tags shani -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
+# Optimized build for specific architectures
+build-amd64:
+	GOOS=linux GOARCH=amd64 $(GO) build -v -o $(BINDIR)/$(BINARY)-linux-amd64 ./cmd/fairchain-miner
+
+build-arm64:
+	GOOS=linux GOARCH=arm64 $(GO) build -v -o $(BINDIR)/$(BINARY)-linux-arm64 ./cmd/fairchain-miner
 
 build-cuda:
-	$(GO) build -tags cuda -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
+	$(GO) build -v -tags cuda -o $(BINDIR)/$(BINARY)-cuda ./cmd/fairchain-miner
 
 build-opencl:
-	$(GO) build -tags opencl -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
+	$(GO) build -v -tags opencl -o $(BINDIR)/$(BINARY)-opencl ./cmd/fairchain-miner
 
 # --- Test / Bench / Lint ---
 test:
@@ -51,7 +56,7 @@ run-regtest:
 	$(BINDIR)/$(BINARY) --rpc http://127.0.0.1:19445
 
 run-testnet:
-	$(BINDIR)/$(BINARY) --rpc http://127.0.0.1:19335
+	$(BINDIR)/$(BINARY) --rpc http://127.0.0.1:19445
 
 # --- Clean ---
 clean:

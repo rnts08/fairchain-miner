@@ -43,14 +43,23 @@ type Workspace struct {
 
 // NewWorkspace creates a new Workspace for a single worker.
 func NewWorkspace() *Workspace {
-	raw, err := memory.AllocateHuge(ScratchpadSize)
+	return NewWorkspaceOnNode(-1)
+}
+
+// NewWorkspaceOnNode creates a new Workspace bound to a specific NUMA node.
+// If node is -1, it uses default system allocation.
+func NewWorkspaceOnNode(node int) *Workspace {
+	var raw []byte
+	var err error
+
+	if node >= 0 {
+		raw, err = memory.AllocateHugeOnNode(ScratchpadSize, node)
+	} else {
+		raw, err = memory.AllocateHuge(ScratchpadSize)
+	}
+
 	if err != nil {
-		// Fallback to regular allocation if mmap fails completely.
-		mem := make([][32]byte, Slots)
-		return &Workspace{
-			Mem:    &mem,
-			Hasher: sha256.New(),
-		}
+		return NewWorkspaceRegular()
 	}
 	
 	// Cast the raw byte slice to [][32]byte using unsafe.Slice.
@@ -58,6 +67,15 @@ func NewWorkspace() *Workspace {
 	
 	return &Workspace{
 		Mem:    &memSlice,
+		Hasher: sha256.New(),
+	}
+}
+
+// NewWorkspaceRegular creates a workspace without hugepages for comparison or fallback.
+func NewWorkspaceRegular() *Workspace {
+	mem := make([][32]byte, Slots)
+	return &Workspace{
+		Mem:    &mem,
 		Hasher: sha256.New(),
 	}
 }

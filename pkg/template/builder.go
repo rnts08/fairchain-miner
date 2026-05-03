@@ -69,6 +69,8 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 	if err != nil {
 		return nil, fmt.Errorf("compute merkle root: %w", err)
 	}
+	// Merkle root is stored reversed in block header (consensus byte order)
+	merkle = merkle.Reversed()
 
 	// Build header.
 	header := types.BlockHeader{

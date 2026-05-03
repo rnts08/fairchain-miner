@@ -130,7 +130,7 @@ func (h *BlockHeader) SerializeToBytes() []byte {
 	return buf
 }
 
-// SerializeInto serializes the block header into an existing buffer
+// SerializeToBytes serializes the block header into an existing buffer
 func (h *BlockHeader) SerializeInto(buf []byte) {
 	binary.LittleEndian.PutUint32(buf[0:4], h.Version)
 	copy(buf[4:36], h.PrevBlock[:])
@@ -140,10 +140,74 @@ func (h *BlockHeader) SerializeInto(buf []byte) {
 	binary.LittleEndian.PutUint32(buf[76:80], h.Nonce)
 }
 
+// SerializeToBytes serializes the transaction
+func (tx *Transaction) SerializeToBytes() []byte {
+	buf := make([]byte, 0, 1024)
+	v := make([]byte, 4)
+	binary.LittleEndian.PutUint32(v, tx.Version)
+	buf = append(buf, v...)
+
+	buf = append(buf, VarInt(uint64(len(tx.Inputs)))...)
+	for _, in := range tx.Inputs {
+		buf = append(buf, in.PreviousOutPoint.Hash[:]...)
+		idx := make([]byte, 4)
+		binary.LittleEndian.PutUint32(idx, in.PreviousOutPoint.Index)
+		buf = append(buf, idx...)
+		buf = append(buf, VarInt(uint64(len(in.SignatureScript)))...)
+		buf = append(buf, in.SignatureScript...)
+		seq := make([]byte, 4)
+		binary.LittleEndian.PutUint32(seq, in.Sequence)
+		buf = append(buf, seq...)
+	}
+
+	buf = append(buf, VarInt(uint64(len(tx.Outputs)))...)
+	for _, out := range tx.Outputs {
+		val := make([]byte, 8)
+		binary.LittleEndian.PutUint64(val, out.Value)
+		buf = append(buf, val...)
+		buf = append(buf, VarInt(uint64(len(out.PkScript)))...)
+		buf = append(buf, out.PkScript...)
+	}
+
+	lt := make([]byte, 4)
+	binary.LittleEndian.PutUint32(lt, tx.LockTime)
+	buf = append(buf, lt...)
+
+	return buf
+}
+
 // SerializeToBytes serializes the block
 func (b *Block) SerializeToBytes() ([]byte, error) {
-	// Simplified serialization for RPC submission
-	buf := make([]byte, 80)
-	copy(buf, b.Header.SerializeToBytes())
+	header := b.Header.SerializeToBytes()
+	buf := append([]byte{}, header...)
+
+	buf = append(buf, VarInt(uint64(len(b.Transactions)))...)
+	for _, tx := range b.Transactions {
+		buf = append(buf, tx.SerializeToBytes()...)
+	}
+
 	return buf, nil
+}
+
+// VarInt returns the variable length integer encoding
+func VarInt(v uint64) []byte {
+	if v < 0xfd {
+		return []byte{byte(v)}
+	}
+	if v <= 0xffff {
+		buf := make([]byte, 3)
+		buf[0] = 0xfd
+		binary.LittleEndian.PutUint16(buf[1:], uint16(v))
+		return buf
+	}
+	if v <= 0xffffffff {
+		buf := make([]byte, 5)
+		buf[0] = 0xfe
+		binary.LittleEndian.PutUint32(buf[1:], uint32(v))
+		return buf
+	}
+	buf := make([]byte, 9)
+	buf[0] = 0xff
+	binary.LittleEndian.PutUint64(buf[1:], v)
+	return buf
 }

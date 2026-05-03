@@ -12,3 +12,5 @@
 # Binaries
 fairchain-miner
 fairchain-miner-tui
+# Docs
+docs/tui_fee_design.md

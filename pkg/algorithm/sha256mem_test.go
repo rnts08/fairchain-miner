@@ -165,3 +165,29 @@ func TestPoWHashKnownVector(t *testing.T) {
 		t.Fatalf("known vector mismatch\n  expected %x\n  got      %x", expected, got)
 	}
 }
+
+func BenchmarkSHANISingle(b *testing.B) {
+	if !HasSHANI {
+		b.Skip("SHA-NI not supported")
+	}
+	var state [8]uint32
+	var block [64]byte
+	b.SetBytes(64)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sha256_compress_single_shani(&state, &block)
+	}
+}
+
+func BenchmarkSHANIDual(b *testing.B) {
+	if !HasSHANI {
+		b.Skip("SHA-NI not supported")
+	}
+	var state1, state2 [8]uint32
+	var block1, block2 [64]byte
+	b.SetBytes(128)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sha256_compress_dual_shani(&state1, &state2, &block1, &block2)
+	}
+}

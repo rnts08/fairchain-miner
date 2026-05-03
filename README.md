@@ -395,19 +395,19 @@ make test
 
 ```bash
 # Mine against a local node
-./fairchain-miner --rpc http://127.0.0.1:19335
+./fairchain-miner --rpc http://127.0.0.1:19445
 
 # Specify worker count
-./fairchain-miner --rpc http://127.0.0.1:19335 --workers 16
+./fairchain-miner --rpc http://127.0.0.1:19445 --workers 16
 
 # Use stratum protocol
 ./fairchain-miner --stratum stratum+tcp://pool.example.com:3333 --user wallet_address
 
 # GPU mining (if compiled with CUDA/OpenCL support)
-./fairchain-miner --rpc http://127.0.0.1:19335 --gpu --device 0
+./fairchain-miner --rpc http://127.0.0.1:19445 --gpu --device 0
 
 # Power limit
-./fairchain-miner --rpc http://127.0.0.1:19335 --power-limit 75
+./fairchain-miner --rpc http://127.0.0.1:19445 --power-limit 75
 
 # Benchmark mode (no RPC, just measure hashrate)
 ./fairchain-miner --benchmark --workers 8 --duration 60s

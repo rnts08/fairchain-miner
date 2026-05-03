@@ -72,6 +72,7 @@ type Client struct {
 
 	hasher  *algorithm.Hasher
 	msgID   atomic.Uint64
+	en2ID   atomic.Uint64 // unique id for extranonce2 generation
 
 	// Channels for communication.
 	jobCh  chan *Job
@@ -105,6 +106,34 @@ func (c *Client) log(format string, args ...interface{}) {
 
 // Connect establishes connection and performs subscribe + authorize handshake.
 func (c *Client) Connect(ctx context.Context) error {
+	return c.connectWithRetry(ctx)
+}
+
+func (c *Client) connectWithRetry(ctx context.Context) error {
+	backoff := 1 * time.Second
+	maxBackoff := 60 * time.Second
+
+	for {
+		err := c.dialAndAuth(ctx)
+		if err == nil {
+			return nil
+		}
+
+		c.log("connection failed: %v, retrying in %v", err, backoff)
+		
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
+func (c *Client) dialAndAuth(ctx context.Context) error {
 	var d net.Dialer
 	addr := c.addr
 	if strings.HasPrefix(addr, "stratum+tcp://") {
@@ -115,7 +144,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", addr, err)
+		return err
 	}
 	c.conn = conn
 	c.scanner = bufio.NewScanner(conn)
@@ -159,30 +188,33 @@ func (c *Client) CurrentDifficulty() float64 {
 // Run starts the read loop that processes server messages. Blocks until ctx
 // is cancelled or the connection is closed.
 func (c *Client) Run(ctx context.Context) {
-	go func() {
-		<-ctx.Done()
-		if c.conn != nil {
-			c.conn.Close()
-		}
-	}()
-
-	for c.scanner.Scan() {
-		line := c.scanner.Text()
-		if line == "" {
-			continue
-		}
-		c.handleMessage(line)
-	}
-
-	if err := c.scanner.Err(); err != nil {
+	for {
 		select {
-		case c.errCh <- fmt.Errorf("stratum read: %w", err):
+		case <-ctx.Done():
+			return
 		default:
 		}
-	} else {
-		select {
-		case c.errCh <- fmt.Errorf("stratum connection closed"):
-		default:
+
+		for c.scanner.Scan() {
+			line := c.scanner.Text()
+			if line == "" {
+				continue
+			}
+			c.handleMessage(line)
+		}
+
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Connection lost, try to reconnect.
+		c.log("connection lost, reconnecting...")
+		if err := c.connectWithRetry(ctx); err != nil {
+			select {
+			case c.errCh <- err:
+			default:
+			}
+			return
 		}
 	}
 }
@@ -519,6 +551,18 @@ func (c *Client) Extranonce1() []byte {
 // Extranonce2Len returns the extranonce2 byte size.
 func (c *Client) Extranonce2Len() int {
 	return c.extranonce2Len
+}
+
+// NextExtranonce2 generates a unique extranonce2 for a worker.
+func (c *Client) NextExtranonce2() []byte {
+	size := c.extranonce2Len
+	if size < 4 {
+		size = 4
+	}
+	en2 := make([]byte, size)
+	val := c.en2ID.Add(1)
+	binary.BigEndian.PutUint64(en2[len(en2)-8:], val)
+	return en2
 }
 
 // --- Utility functions ---

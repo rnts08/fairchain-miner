@@ -35,3 +35,14 @@ func BenchmarkPoWHash(b *testing.B) {
 		h.PoWHash(data, ws)
 	}
 }
+
+func BenchmarkPoWHashRegular(b *testing.B) {
+	h := New()
+	ws := NewWorkspaceRegular()
+	data := make([]byte, 80)
+	
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h.PoWHash(data, ws)
+	}
+}
