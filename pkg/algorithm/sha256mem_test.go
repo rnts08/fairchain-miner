@@ -7,6 +7,7 @@ package algorithm
 import (
 	"crypto/sha256"
 	"encoding"
+	"encoding/binary"
 	"encoding/hex"
 	"reflect"
 	"testing"
@@ -52,6 +53,83 @@ func TestSHANI(t *testing.T) {
 	}
 }
 
+func TestSHANISingle(t *testing.T) {
+	if !HasSHANI {
+		t.Skip("SHA-NI not supported on this CPU")
+	}
+
+	header := make([]byte, 80)
+	for i := range header {
+		header[i] = byte(i)
+	}
+
+	want := sha256.Sum256(header)
+
+	h := sha256.New()
+	h.Write(header[:64])
+	var mid [32]byte
+	m, _ := h.(encoding.BinaryMarshaler).MarshalBinary()
+	copy(mid[:], m[4:36])
+
+	var state [8]uint32
+	for i := 0; i < 8; i++ {
+		state[i] = binary.BigEndian.Uint32(mid[i*4:])
+	}
+
+	var block [64]byte
+	copy(block[:], header[64:])
+	block[16] = 0x80
+	binary.BigEndian.PutUint64(block[56:], 80*8)
+
+	sha256_compress_single_shani(&state, &block)
+
+	var got [32]byte
+	for i := 0; i < 8; i++ {
+		binary.BigEndian.PutUint32(got[i*4:], state[i])
+	}
+
+	if !reflect.DeepEqual(got[:], want[:]) {
+		t.Errorf("Single assembly hash mismatch\ngot:  %x\nwant: %x", got, want)
+	}
+}
+
+func TestSHANIDual(t *testing.T) {
+	if !HasSHANI {
+		t.Skip("SHA-NI not supported on this CPU")
+	}
+
+	header1 := make([]byte, 80)
+	header2 := make([]byte, 80)
+	for i := range header1 {
+		header1[i] = byte(i)
+		header2[i] = byte(i + 1)
+	}
+
+	want1 := sha256.Sum256(header1)
+	want2 := sha256.Sum256(header2)
+
+	h1 := sha256.New()
+	h1.Write(header1[:64])
+	var mid1 [32]byte
+	m1, _ := h1.(encoding.BinaryMarshaler).MarshalBinary()
+	copy(mid1[:], m1[4:36])
+
+	h2 := sha256.New()
+	h2.Write(header2[:64])
+	var mid2 [32]byte
+	m2, _ := h2.(encoding.BinaryMarshaler).MarshalBinary()
+	copy(mid2[:], m2[4:36])
+
+	got1, got2 := SHA256SHANIMidstateDual(&mid1, &mid2, header1[64:], header2[64:])
+
+	if !reflect.DeepEqual(got1[:], want1[:]) {
+		t.Errorf("Dual hash 1 mismatch\ngot:  %x\nwant: %x", got1, want1)
+	}
+	if !reflect.DeepEqual(got2[:], want2[:]) {
+		t.Errorf("Dual hash 2 mismatch\ngot:  %x\nwant: %x", got2, want2)
+	}
+}
+
 // TestArxFill tests the non-cryptographic memory fill function for determinism.
 func TestArxFill(t *testing.T) {
 	var dst, src [32]byte
@@ -60,7 +138,7 @@ func TestArxFill(t *testing.T) {
 		src[i] = byte(i)
 	}
 
-	arxFill(&dst, &src, 1234)
+	ARXFill(&dst, &src, 1234)
 
 	expected, _ := hex.DecodeString("6041bc43e4e540c7698ac54ced2e49d072d3ca55f6774ed97b1cd25effc056e2")
 	if !reflect.DeepEqual(dst[:], expected) {

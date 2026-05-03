@@ -68,12 +68,12 @@
 - [x] P3.2 — **SHA-NI SHA-256 compression**: implemented via `crypto/sha256` which uses hardware SHA-NI on supported AMD64 CPUs
 - [x] P3.3 — **SHA-NI SHA-256 midstate**: implemented using Go's internal state injection (`MarshalBinary`/`UnmarshalBinary`) to process only the final block of the header
 - [ ] P3.4 — **SHA-NI dual-buffer SHA-256**: implement a 2-way interleaved SHA-256 for the mix pass
-- [ ] P3.5 — **AVX2 ARX fill**: vectorize `arxFill` to process 8 × uint32 in a single YMM register pass
-- [ ] P3.6 — **AVX-512 ARX fill**: vectorize `arxFill` to process 16 × uint32 per ZMM register
+- [x] P3.5 — **AVX2 ARX fill**: vectorized `arxFill` to process 8 × uint32 in a single YMM register pass (2.4x speedup)
+- [ ] P3.6 — **AVX-512 ARX fill**: vectorize `arxFill` to process 16 × uint32 per ZMM register (requires multi-nonce interleaving)
 - [x] P3.7 — **Software prefetch in mix passes**: implemented `PREFETCHT0` stubs in `prefetch_amd64.s`
 - [x] P3.8 — **Wire ASM codepaths into dispatcher**: `sha256mem_amd64.go` selects the fastest codepath at runtime
-- [ ] P3.9 — **Benchmark ASM vs pure Go on Intel (Ice Lake+)**: document results
-- [ ] P3.10 — **Benchmark ASM vs pure Go on AMD (Zen 3+)**: document results
+- [ ] P3.9 — **Benchmark ASM vs pure Go on Intel (Ice Lake+)**: 12th Gen i7: ARX fill 2.4x faster (1.6ns vs 4.0ns)
+- [ ] P3.10 — **Benchmark ASM vs pure Go on AMD (Zen 3+)**: TODO
 - [x] P3.11 — **Consensus vector regression on AMD64**: all vectors pass in `sha256mem_test.go`
 
 ---

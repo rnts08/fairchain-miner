@@ -134,7 +134,7 @@ func (h *Hasher) PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) ty
 		if i%HardenInterval == 0 {
 			mem[i] = ws.sum256(mem[i-1][:])
 		} else {
-			arxFill(&mem[i], &mem[i-1], uint32(i))
+			ARXFill(&mem[i], &mem[i-1], uint32(i))
 		}
 	}
 
@@ -197,9 +197,9 @@ func mixPassB(acc [32]byte, mem *[][32]byte, ws *Workspace) [32]byte {
 	return acc
 }
 
-// arxFill performs the ARX (Add-Rotate-XOR) fill for non-hardened slots.
+// arxFillGeneric performs the ARX (Add-Rotate-XOR) fill for non-hardened slots.
 // This is fast non-cryptographic fill to populate the scratchpad cheaply.
-func arxFill(dst, src *[32]byte, index uint32) {
+func arxFillGeneric(dst, src *[32]byte, index uint32) {
 	// Unrolled ARX fill (P2.7)
 	v0 := binary.LittleEndian.Uint32(src[0:4])
 	v0 ^= index
