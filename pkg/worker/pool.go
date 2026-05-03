@@ -8,15 +8,17 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding"
 	"encoding/binary"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/algorithm"
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/metrics"
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/template"
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
+	"github.com/bams-repo/fairchain-miner/pkg/metrics"
+	"github.com/bams-repo/fairchain-miner/pkg/template"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 // MineResult holds the outcome of a mining attempt.
@@ -94,9 +96,18 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 		go func(sn, en uint64) {
 			defer wg.Done()
 
+			// Each worker gets its own workspace to avoid allocations.
+			ws := algorithm.NewWorkspace()
+
 			// Each worker gets its own copy of the header bytes to stamp nonces into.
 			var headerBuf [types.BlockHeaderSize]byte
 			copy(headerBuf[:], tmpl.HeaderBytes[:])
+
+			// Precompute SHA-256 midstate for the first 64 bytes of the header (P2.5)
+			// The first 64 bytes are constant across all nonces in this template.
+			midHasher := sha256.New()
+			midHasher.Write(headerBuf[:64])
+			midState, _ := midHasher.(encoding.BinaryMarshaler).MarshalBinary()
 
 			for pos := sn; pos < en; pos++ {
 				select {
@@ -111,8 +122,8 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 				nonce := uint32(pos)
 				binary.LittleEndian.PutUint32(headerBuf[76:80], nonce)
 
-				// Compute PoW hash.
-				h := hasher.PoWHash(headerBuf[:])
+				// Compute PoW hash using midstate optimization.
+				h := hasher.PoWHashMidstate(headerBuf[:], ws, midState)
 				hashCount.Add(1)
 				tracker.Add(1)
 
@@ -160,6 +171,9 @@ func (p *Pool) RunBenchmark(ctx context.Context, hasher *algorithm.Hasher, input
 		go func() {
 			defer wg.Done()
 
+			// Each worker gets its own workspace.
+			ws := algorithm.NewWorkspace()
+
 			// Each worker hashes with incrementing nonce-like data.
 			var buf [80]byte
 			copy(buf[:], input)
@@ -173,7 +187,7 @@ func (p *Pool) RunBenchmark(ctx context.Context, hasher *algorithm.Hasher, input
 				}
 
 				binary.LittleEndian.PutUint32(buf[76:80], nonce)
-				hasher.PoWHash(buf[:])
+				hasher.PoWHash(buf[:], ws)
 				tracker.Add(1)
 				nonce++
 

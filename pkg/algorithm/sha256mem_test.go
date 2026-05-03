@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 // TestArxFill tests the non-cryptographic memory fill function for determinism.
@@ -32,6 +32,7 @@ func TestArxFill(t *testing.T) {
 // reference node implementation bit-for-bit. This vector is consensus-critical.
 func TestPoWHashKnownVector(t *testing.T) {
 	h := New()
+	ws := NewWorkspace()
 
 	// Empty input known vector — must match internal/algorithms/sha256mem exactly.
 	// BE output: c44266989d33a18aeefde8a63588433ff51d61a0afddff88fe9b533bc2d19469
@@ -41,7 +42,7 @@ func TestPoWHashKnownVector(t *testing.T) {
 	var expected types.Hash
 	copy(expected[:], want)
 
-	got := h.PoWHash(input)
+	got := h.PoWHash(input, ws)
 	if got != expected {
 		t.Fatalf("known vector mismatch\n  expected %x\n  got      %x", expected, got)
 	}
@@ -50,9 +51,10 @@ func TestPoWHashKnownVector(t *testing.T) {
 // TestPoWHashDeterministic verifies identical inputs produce identical outputs.
 func TestPoWHashDeterministic(t *testing.T) {
 	h := New()
+	ws := NewWorkspace()
 	input := []byte("test vector for sha256mem pow hash")
-	got1 := h.PoWHash(input)
-	got2 := h.PoWHash(input)
+	got1 := h.PoWHash(input, ws)
+	got2 := h.PoWHash(input, ws)
 
 	if got1 == types.ZeroHash {
 		t.Fatal("PoWHash returned zero hash")
@@ -65,8 +67,9 @@ func TestPoWHashDeterministic(t *testing.T) {
 // TestPoWHashDifferentInputs verifies different inputs produce different hashes.
 func TestPoWHashDifferentInputs(t *testing.T) {
 	h := New()
-	a := h.PoWHash([]byte("input A"))
-	b := h.PoWHash([]byte("input B"))
+	ws := NewWorkspace()
+	a := h.PoWHash([]byte("input A"), ws)
+	b := h.PoWHash([]byte("input B"), ws)
 
 	if a == b {
 		t.Fatal("different inputs produced the same hash")
@@ -76,18 +79,19 @@ func TestPoWHashDifferentInputs(t *testing.T) {
 // TestPoWHash80ByteHeader tests with a realistic 80-byte block header input.
 func TestPoWHash80ByteHeader(t *testing.T) {
 	h := New()
+	ws := NewWorkspace()
 	var header [80]byte
 	for i := range header {
 		header[i] = byte(i)
 	}
 
-	got := h.PoWHash(header[:])
+	got := h.PoWHash(header[:], ws)
 	if got == types.ZeroHash {
 		t.Fatal("PoWHash of 80-byte header returned zero hash")
 	}
 
 	// Verify deterministic.
-	got2 := h.PoWHash(header[:])
+	got2 := h.PoWHash(header[:], ws)
 	if got != got2 {
 		t.Fatal("80-byte header hash is not deterministic")
 	}
@@ -96,15 +100,17 @@ func TestPoWHash80ByteHeader(t *testing.T) {
 // TestConcurrentSafety verifies the hasher is safe for concurrent use.
 func TestConcurrentSafety(t *testing.T) {
 	h := New()
+	ws := NewWorkspace()
 	input := []byte("concurrent test data")
-	expected := h.PoWHash(input)
+	expected := h.PoWHash(input, ws)
 
 	done := make(chan struct{})
 	for i := 0; i < 10; i++ {
 		go func() {
+			ws := NewWorkspace()
 			defer func() { done <- struct{}{} }()
 			for j := 0; j < 5; j++ {
-				got := h.PoWHash(input)
+				got := h.PoWHash(input, ws)
 				if got != expected {
 					t.Errorf("concurrent PoWHash mismatch")
 					return
@@ -120,10 +126,11 @@ func TestConcurrentSafety(t *testing.T) {
 // BenchmarkPoWHash benchmarks single-threaded hash throughput.
 func BenchmarkPoWHash(b *testing.B) {
 	h := New()
+	ws := NewWorkspace()
 	input := []byte("benchmark input for sha256mem")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.PoWHash(input)
+		h.PoWHash(input, ws)
 	}
 }
 
@@ -133,8 +140,9 @@ func BenchmarkPoWHashParallel(b *testing.B) {
 	input := []byte("benchmark input for sha256mem")
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
+		ws := NewWorkspace()
 		for pb.Next() {
-			h.PoWHash(input)
+			h.PoWHash(input, ws)
 		}
 	})
 }
@@ -142,13 +150,14 @@ func BenchmarkPoWHashParallel(b *testing.B) {
 // BenchmarkPoWHash80Byte benchmarks with realistic 80-byte header input.
 func BenchmarkPoWHash80Byte(b *testing.B) {
 	h := New()
+	ws := NewWorkspace()
 	var header [80]byte
 	for i := range header {
 		header[i] = byte(i)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.PoWHash(header[:])
+		h.PoWHash(header[:], ws)
 	}
 }
 

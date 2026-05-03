@@ -46,15 +46,15 @@
 
 > **Agent profile:** Go performance optimization, unsafe patterns, compiler hints
 
-- [ ] P2.1 — **Pre-allocated scratchpad per worker**: replace `sync.Pool` with a dedicated `[Slots][32]byte` allocation per goroutine, passed into PoWHash as a parameter
-- [ ] P2.2 — **Reusable SHA-256 hasher**: replace `sha256.Sum256()` calls with `sha256.New()` + `Reset()` + `Write()` + `Sum(buf[:0])` to eliminate allocation per hash
-- [ ] P2.3 — **Inline binary.LittleEndian**: replace `binary.LittleEndian.Uint32` / `PutUint32` with direct `unsafe.Pointer` word access on little-endian platforms (build-tagged)
-- [ ] P2.4 — **Bounds check elimination in ARX fill**: restructure loop to prove to the compiler that all indices are in-bounds; verify with `go build -gcflags="-d=ssa/check_bce/debug=1"`
-- [ ] P2.5 — **SHA-256 midstate optimization**: for the seed SHA-256, precompute the compression of the first 64 bytes of the 80-byte header once per template; only re-compress the remaining 16 bytes (nonce block) per nonce iteration
-- [ ] P2.6 — **Batch nonce serialization**: only write the 4-byte nonce into the pre-serialized 80-byte header buffer instead of calling `SerializeInto` on every iteration
-- [ ] P2.7 — **Unroll ARX fill inner loop**: manually unroll the 8-iteration word loop
-- [ ] P2.8 — **Prefetch hints in mix passes**: insert `runtime_prefetch` (via `//go:linkname` or asm stub) to prefetch `mem[next_idx]` one round ahead
-- [ ] P2.9 — **Reduce memory copies in mix passes**: avoid `copy(buf[:32], acc[:])` + `copy(buf[32:], mem[idx][:])` by constructing the 64-byte buffer in-place or using unsafe overlay
+- [x] P2.1 — **Pre-allocated scratchpad per worker**: replace `sync.Pool` with a dedicated `[Slots][32]byte` allocation per goroutine, passed into PoWHash as a parameter
+- [x] P2.2 — **Reusable SHA-256 hasher**: replace `sha256.Sum256()` calls with `sha256.New()` + `Reset()` + `Write()` + `Sum(buf[:0])` to eliminate allocation per hash
+- [x] P2.3 — **Inline binary.LittleEndian**: replace `binary.LittleEndian.Uint32` / `PutUint32` with direct `unsafe.Pointer` word access on little-endian platforms (build-tagged)
+- [x] P2.4 — **Bounds check elimination in ARX fill**: restructure loop to prove to the compiler that all indices are in-bounds; verify with `go build -gcflags="-d=ssa/check_bce/debug=1"`
+- [x] P2.5 — **SHA-256 midstate optimization**: for the seed SHA-256, precompute the compression of the first 64 bytes of the 80-byte header once per template; only re-compress the remaining 16 bytes (nonce block) per nonce iteration
+- [x] P2.6 — **Batch nonce serialization**: only write the 4-byte nonce into the pre-serialized 80-byte header buffer instead of calling `SerializeInto` on every iteration
+- [x] P2.7 — **Unroll ARX fill inner loop**: manually unroll the 8-iteration word loop
+- [x] P2.8 — **Prefetch hints in mix passes**: insert `runtime_prefetch` (via `//go:linkname` or asm stub) to prefetch `mem[next_idx]` one round ahead
+- [x] P2.9 — **Reduce memory copies in mix passes**: avoid `copy(buf[:32], acc[:])` + `copy(buf[32:], mem[idx][:])` by constructing the 64-byte buffer in-place or using unsafe overlay
 - [ ] P2.10 — **Benchmark each optimization individually**: A/B test every change against the previous baseline; reject regressions
 - [ ] P2.11 — **Consensus vector regression**: all vectors from P1.2 must still pass after each optimization
 

@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/algorithm"
+	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
 )
 
 type vector struct {
@@ -26,11 +26,12 @@ type vector struct {
 
 func main() {
 	h := algorithm.New()
+	ws := algorithm.NewWorkspace()
 
 	var vectors []vector
 
 	// 1. Empty input.
-	empty := h.PoWHash([]byte{})
+	empty := h.PoWHash([]byte{}, ws)
 	vectors = append(vectors, vector{
 		Name:   "empty_input",
 		Input:  "",
@@ -40,7 +41,7 @@ func main() {
 	// 2. Single byte inputs.
 	for i := 0; i < 5; i++ {
 		input := []byte{byte(i)}
-		out := h.PoWHash(input)
+		out := h.PoWHash(input, ws)
 		vectors = append(vectors, vector{
 			Name:   fmt.Sprintf("single_byte_%d", i),
 			Input:  hex.EncodeToString(input),
@@ -57,7 +58,7 @@ func main() {
 	}
 	for _, s := range knownStrings {
 		input := []byte(s)
-		out := h.PoWHash(input)
+		out := h.PoWHash(input, ws)
 		vectors = append(vectors, vector{
 			Name:   fmt.Sprintf("string_%s", s),
 			Input:  hex.EncodeToString(input),
@@ -71,7 +72,7 @@ func main() {
 		for j := range header {
 			header[j] = byte(j + i)
 		}
-		out := h.PoWHash(header[:])
+		out := h.PoWHash(header[:], ws)
 		vectors = append(vectors, vector{
 			Name:   fmt.Sprintf("header_80byte_seq_%d", i),
 			Input:  hex.EncodeToString(header[:]),
@@ -90,7 +91,7 @@ func main() {
 		header[77] = byte(nonce >> 8)
 		header[78] = byte(nonce >> 16)
 		header[79] = byte(nonce >> 24)
-		out := h.PoWHash(header[:])
+		out := h.PoWHash(header[:], ws)
 		vectors = append(vectors, vector{
 			Name:   fmt.Sprintf("header_nonce_%d", nonce),
 			Input:  hex.EncodeToString(header[:]),
@@ -103,7 +104,7 @@ func main() {
 	for _, size := range sizes {
 		input := make([]byte, size)
 		rand.Read(input)
-		out := h.PoWHash(input)
+		out := h.PoWHash(input, ws)
 		vectors = append(vectors, vector{
 			Name:   fmt.Sprintf("random_%d_bytes", size),
 			Input:  hex.EncodeToString(input),

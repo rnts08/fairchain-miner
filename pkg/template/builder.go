@@ -10,9 +10,9 @@ package template
 import (
 	"fmt"
 
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/rpc"
-	"github.com/bams-repo/fairchain/internal/crypto"
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/rpc"
+	"github.com/bams-repo/fairchain-miner/pkg/crypto"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 // BlockTemplate holds everything needed to mine a block.

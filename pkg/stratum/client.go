@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bams-repo/fairchain/fairchain-miner/pkg/algorithm"
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 // Stats holds stratum mining statistics.

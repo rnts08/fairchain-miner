@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 // TestTargetToDifficulty verifies our target computation logic perfectly

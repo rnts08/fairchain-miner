@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/bams-repo/fairchain/internal/types"
+	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
 type testVector struct {
@@ -27,6 +27,7 @@ type testVector struct {
 func TestVectorRegression(t *testing.T) {
 	vectors := loadVectors(t)
 	h := New()
+	ws := NewWorkspace()
 
 	for _, v := range vectors {
 		t.Run(v.Name, func(t *testing.T) {
@@ -42,7 +43,7 @@ func TestVectorRegression(t *testing.T) {
 			var want types.Hash
 			copy(want[:], wantBytes)
 
-			got := h.PoWHash(input)
+			got := h.PoWHash(input, ws)
 			if got != want {
 				t.Errorf("vector %s mismatch\n  input:    %s\n  expected: %x\n  got:      %x",
 					v.Name, v.Input, want, got)
