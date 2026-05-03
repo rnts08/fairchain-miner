@@ -93,8 +93,11 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 			endNonce = 0x100000000
 		}
 
-		go func(sn, en uint64) {
+		go func(workerID int, sn, en uint64) {
 			defer wg.Done()
+
+			// P5.4: Set CPU affinity to pin the worker to a specific core.
+			_ = SetAffinity(workerID)
 
 			// Each worker gets its own workspace to avoid allocations.
 			ws := algorithm.NewWorkspace()
@@ -144,7 +147,7 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 					time.Sleep(time.Duration(float64(elapsed) * sleepRatio))
 				}
 			}
-		}(startNonce, endNonce)
+		}(w, startNonce, endNonce)
 	}
 
 	go func() {

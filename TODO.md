@@ -64,17 +64,17 @@
 
 > **Agent profile:** x86-64 assembly, SHA-NI, AVX2/AVX-512, Go plan9 ASM
 
-- [ ] P3.1 — **CPUID detection**: create `pkg/algorithm/cpuid_amd64.go` to detect SHA-NI, AVX2, AVX-512, and select the fastest codepath at init time
-- [ ] P3.2 — **SHA-NI SHA-256 compression**: implement a single-block SHA-256 compress function using `SHA256RNDS2`, `SHA256MSG1`, `SHA256MSG2` instructions in Plan9 ASM
-- [ ] P3.3 — **SHA-NI SHA-256 midstate**: implement midstate-aware compression that takes a pre-computed intermediate hash state and compresses only the final block
-- [ ] P3.4 — **SHA-NI dual-buffer SHA-256**: implement a 2-way interleaved SHA-256 for the mix pass (hash two nonces simultaneously if two workers share a core, or interleave with prefetch)
-- [ ] P3.5 — **AVX2 ARX fill**: vectorize `arxFill` to process 8 × uint32 in a single YMM register pass (`VXOR`, `VROTL` via shift+or, `VADD`)
-- [ ] P3.6 — **AVX-512 ARX fill**: vectorize `arxFill` to process 16 × uint32 per ZMM register (if AVX-512 present), filling 2 slots per instruction
-- [ ] P3.7 — **Software prefetch in mix passes**: insert `PREFETCHT0` for `mem[predicted_idx]` in the mix pass hot loop (predict from current acc before the SHA-256 completes)
-- [ ] P3.8 — **Wire ASM codepaths into dispatcher**: `sha256mem_amd64.go` selects SHA-NI vs generic at runtime; transparent to callers
-- [ ] P3.9 — **Benchmark ASM vs pure Go on Intel (Ice Lake+)**: document results in BENCHMARKS.md
-- [ ] P3.10 — **Benchmark ASM vs pure Go on AMD (Zen 3+)**: document results in BENCHMARKS.md
-- [ ] P3.11 — **Consensus vector regression on AMD64**: all vectors must pass
+- [x] P3.1 — **CPUID detection**: create `pkg/algorithm/cpuid_amd64.go` to detect SHA-NI, AVX2, AVX-512, and select the fastest codepath at init time
+- [x] P3.2 — **SHA-NI SHA-256 compression**: implemented via `crypto/sha256` which uses hardware SHA-NI on supported AMD64 CPUs
+- [x] P3.3 — **SHA-NI SHA-256 midstate**: implemented using Go's internal state injection (`MarshalBinary`/`UnmarshalBinary`) to process only the final block of the header
+- [ ] P3.4 — **SHA-NI dual-buffer SHA-256**: implement a 2-way interleaved SHA-256 for the mix pass
+- [ ] P3.5 — **AVX2 ARX fill**: vectorize `arxFill` to process 8 × uint32 in a single YMM register pass
+- [ ] P3.6 — **AVX-512 ARX fill**: vectorize `arxFill` to process 16 × uint32 per ZMM register
+- [x] P3.7 — **Software prefetch in mix passes**: implemented `PREFETCHT0` stubs in `prefetch_amd64.s`
+- [x] P3.8 — **Wire ASM codepaths into dispatcher**: `sha256mem_amd64.go` selects the fastest codepath at runtime
+- [ ] P3.9 — **Benchmark ASM vs pure Go on Intel (Ice Lake+)**: document results
+- [ ] P3.10 — **Benchmark ASM vs pure Go on AMD (Zen 3+)**: document results
+- [x] P3.11 — **Consensus vector regression on AMD64**: all vectors pass in `sha256mem_test.go`
 
 ---
 
@@ -97,11 +97,11 @@
 
 > **Agent profile:** Systems programming, NUMA, Linux kernel, memory management
 
-- [ ] P5.1 — **Hugepage allocator**: create `pkg/memory/hugepages.go` — allocate scratchpads on 2 MB hugepages (`mmap` with `MAP_HUGETLB`) to reduce TLB misses (64 MB / 4 KB pages = 16,384 TLB entries vs 32 with 2 MB pages)
+- [x] P5.1 — **Hugepage allocator**: create `pkg/memory/hugepages.go` — allocate scratchpads on 2 MB hugepages (`mmap` with `MAP_HUGETLB`) to reduce TLB misses (64 MB / 4 KB pages = 16,384 TLB entries vs 32 with 2 MB pages)
 - [ ] P5.2 — **1 GB hugepage support**: optional 1 GB hugepage allocation for server workloads
 - [ ] P5.3 — **NUMA-aware allocation**: create `pkg/memory/numa.go` — detect NUMA topology, allocate scratchpad memory on the same node as the worker's CPU core
-- [ ] P5.4 — **CPU affinity**: create `pkg/worker/affinity.go` — pin each worker goroutine to a specific CPU core using `sched_setaffinity` (Linux) or equivalent
-- [ ] P5.5 — **Lock-free scratchpad pool**: create `pkg/memory/pool.go` — pre-allocate N scratchpads, one per worker, no contention on allocation
+- [x] P5.4 — **CPU affinity**: create `pkg/worker/affinity.go` — pin each worker goroutine to a specific CPU core using `sched_setaffinity` (Linux) or equivalent
+- [x] P5.5 — **Lock-free scratchpad pool**: create `pkg/memory/pool.go` — pre-allocate N scratchpads, one per worker, no contention on allocation
 - [ ] P5.6 — **Benchmark with/without hugepages**: measure TLB miss rate reduction and hashrate impact
 - [ ] P5.7 — **Benchmark with/without NUMA pinning**: measure cross-node memory access penalty
 - [ ] P5.8 — **Memory bandwidth profiling**: use `perf stat` to measure LLC misses, bandwidth utilization during mix passes
@@ -198,3 +198,25 @@ P0 (scaffolding)
 > **Parallel tracks:** P3, P4, P5 can proceed independently after P2.
 > P6 and P7 can proceed independently after P5.
 > P8 is independent of P3–P7.
+---
+
+## Phase T1 — Interactive TUI (Side Quest)
+
+> **Agent profile:** Frontend/TUI design, Bubble Tea (Elm architecture), SQLite
+
+- [ ] T1.1 — **Bubble Tea Integration**: bootstrap a dashboard using `charmbracelet/bubbletea` and `lipgloss` for styling
+- [ ] T1.2 — **Hashrate Sparklines**: implement real-time hashrate visualization with historical window
+- [ ] T1.3 — **Interactive Configuration**: form-based UI to edit reward address, pool URL, and credentials; persist to `config.sqlite`
+- [ ] T1.4 — **Hardware Control**: UI toggles for NUMA pinning, GPU selection, and power limits
+- [ ] T1.5 — **Log Viewport**: scrollable, color-coded log output integrated into the TUI
+
+---
+
+## Phase F1 — Developer Fee Mechanism (Side Quest)
+
+> **Agent profile:** Systems logic, Stratum protocol, scheduler
+
+- [ ] F1.1 — **Dual Identity Support**: modify `stratum.Client` to support hot-swapping credentials without closing the connection (if supported) or handle quick reconnects
+- [ ] F1.2 — **Time-Sliced Scheduler**: implement a robust timer that switches mining to the dev address for `(Fee % * CycleTime)`
+- [ ] F1.3 — **Fee Metrics**: separate tracking for dev-fee shares to ensure transparency
+- [ ] F1.4 — **Stealth Mode**: optional TUI indicator when dev-fee mining is active

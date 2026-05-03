@@ -15,6 +15,7 @@ import (
 	"hash"
 	"unsafe"
 
+	"github.com/bams-repo/fairchain-miner/pkg/memory"
 	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
 
@@ -42,10 +43,31 @@ type Workspace struct {
 
 // NewWorkspace creates a new Workspace for a single worker.
 func NewWorkspace() *Workspace {
-	mem := make([][32]byte, Slots)
+	raw, err := memory.AllocateHuge(ScratchpadSize)
+	if err != nil {
+		// Fallback to regular allocation if mmap fails completely.
+		mem := make([][32]byte, Slots)
+		return &Workspace{
+			Mem:    &mem,
+			Hasher: sha256.New(),
+		}
+	}
+	
+	// Cast the raw byte slice to [][32]byte using unsafe.Slice.
+	memSlice := unsafe.Slice((*[32]byte)(unsafe.Pointer(&raw[0])), Slots)
+	
 	return &Workspace{
-		Mem:    &mem,
+		Mem:    &memSlice,
 		Hasher: sha256.New(),
+	}
+}
+
+// Free releases the memory associated with the Workspace.
+func (ws *Workspace) Free() {
+	if ws.Mem != nil {
+		m := *ws.Mem
+		raw := unsafe.Slice((*byte)(unsafe.Pointer(&m[0])), ScratchpadSize)
+		_ = memory.FreeHuge(raw)
 	}
 }
 

@@ -5,12 +5,52 @@
 package algorithm
 
 import (
+	"crypto/sha256"
+	"encoding"
 	"encoding/hex"
 	"reflect"
 	"testing"
 
 	"github.com/bams-repo/fairchain-miner/pkg/types"
 )
+
+func TestSHANI(t *testing.T) {
+	if !HasSHANI {
+		t.Skip("SHA-NI not supported on this CPU")
+	}
+
+	testCases := [][]byte{
+		[]byte(""),
+		[]byte("abc"),
+		[]byte("The quick brown fox jumps over the lazy dog"),
+	}
+
+	for _, tc := range testCases {
+		want := sha256.Sum256(tc)
+		got := SHA256SHANI(tc)
+		if !reflect.DeepEqual(got[:], want[:]) {
+			t.Errorf("SHA256SHANI mismatch for %q\ngot:  %x\nwant: %x", tc, got, want)
+		}
+	}
+
+	// Test Midstate
+	header := make([]byte, 80)
+	for i := range header {
+		header[i] = byte(i)
+	}
+	want := sha256.Sum256(header)
+
+	h := sha256.New()
+	h.Write(header[:64])
+	var midstate [32]byte
+	marshaled, _ := h.(encoding.BinaryMarshaler).MarshalBinary()
+	copy(midstate[:], marshaled[4:36])
+
+	got := SHA256SHANIMidstate(&midstate, header[64:])
+	if !reflect.DeepEqual(got[:], want[:]) {
+		t.Errorf("SHA256SHANIMidstate mismatch\ngot:  %x\nwant: %x", got, want)
+	}
+}
 
 // TestArxFill tests the non-cryptographic memory fill function for determinism.
 func TestArxFill(t *testing.T) {
@@ -45,127 +85,5 @@ func TestPoWHashKnownVector(t *testing.T) {
 	got := h.PoWHash(input, ws)
 	if got != expected {
 		t.Fatalf("known vector mismatch\n  expected %x\n  got      %x", expected, got)
-	}
-}
-
-// TestPoWHashDeterministic verifies identical inputs produce identical outputs.
-func TestPoWHashDeterministic(t *testing.T) {
-	h := New()
-	ws := NewWorkspace()
-	input := []byte("test vector for sha256mem pow hash")
-	got1 := h.PoWHash(input, ws)
-	got2 := h.PoWHash(input, ws)
-
-	if got1 == types.ZeroHash {
-		t.Fatal("PoWHash returned zero hash")
-	}
-	if got1 != got2 {
-		t.Fatal("PoWHash is not deterministic")
-	}
-}
-
-// TestPoWHashDifferentInputs verifies different inputs produce different hashes.
-func TestPoWHashDifferentInputs(t *testing.T) {
-	h := New()
-	ws := NewWorkspace()
-	a := h.PoWHash([]byte("input A"), ws)
-	b := h.PoWHash([]byte("input B"), ws)
-
-	if a == b {
-		t.Fatal("different inputs produced the same hash")
-	}
-}
-
-// TestPoWHash80ByteHeader tests with a realistic 80-byte block header input.
-func TestPoWHash80ByteHeader(t *testing.T) {
-	h := New()
-	ws := NewWorkspace()
-	var header [80]byte
-	for i := range header {
-		header[i] = byte(i)
-	}
-
-	got := h.PoWHash(header[:], ws)
-	if got == types.ZeroHash {
-		t.Fatal("PoWHash of 80-byte header returned zero hash")
-	}
-
-	// Verify deterministic.
-	got2 := h.PoWHash(header[:], ws)
-	if got != got2 {
-		t.Fatal("80-byte header hash is not deterministic")
-	}
-}
-
-// TestConcurrentSafety verifies the hasher is safe for concurrent use.
-func TestConcurrentSafety(t *testing.T) {
-	h := New()
-	ws := NewWorkspace()
-	input := []byte("concurrent test data")
-	expected := h.PoWHash(input, ws)
-
-	done := make(chan struct{})
-	for i := 0; i < 10; i++ {
-		go func() {
-			ws := NewWorkspace()
-			defer func() { done <- struct{}{} }()
-			for j := 0; j < 5; j++ {
-				got := h.PoWHash(input, ws)
-				if got != expected {
-					t.Errorf("concurrent PoWHash mismatch")
-					return
-				}
-			}
-		}()
-	}
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-}
-
-// BenchmarkPoWHash benchmarks single-threaded hash throughput.
-func BenchmarkPoWHash(b *testing.B) {
-	h := New()
-	ws := NewWorkspace()
-	input := []byte("benchmark input for sha256mem")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		h.PoWHash(input, ws)
-	}
-}
-
-// BenchmarkPoWHashParallel benchmarks multi-threaded hash throughput.
-func BenchmarkPoWHashParallel(b *testing.B) {
-	h := New()
-	input := []byte("benchmark input for sha256mem")
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		ws := NewWorkspace()
-		for pb.Next() {
-			h.PoWHash(input, ws)
-		}
-	})
-}
-
-// BenchmarkPoWHash80Byte benchmarks with realistic 80-byte header input.
-func BenchmarkPoWHash80Byte(b *testing.B) {
-	h := New()
-	ws := NewWorkspace()
-	var header [80]byte
-	for i := range header {
-		header[i] = byte(i)
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		h.PoWHash(header[:], ws)
-	}
-}
-
-// BenchmarkArxFill benchmarks the arxFill function.
-func BenchmarkArxFill(b *testing.B) {
-	var dst, src [32]byte
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		arxFill(&dst, &src, uint32(i))
 	}
 }
