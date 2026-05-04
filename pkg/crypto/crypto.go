@@ -96,12 +96,12 @@ func CompactToHash(compact uint32) types.Hash {
 
 	b := targetInt.Bytes()
 	var h types.Hash
-	// Target is in little-endian internal byte order for PoWHash comparison.
-	for i, j := 0, len(b)-1; j >= 0; i, j = i+1, j-1 {
-		if i >= 32 {
-			break
+	// Target is stored as big-endian, left-aligned in 32 byte hash
+	offset := 32 - len(b)
+	for i := 0; i < len(b); i++ {
+		if offset+i >= 0 && offset+i < 32 {
+			h[offset+i] = b[i]
 		}
-		h[i] = b[j]
 	}
 	return h
 }

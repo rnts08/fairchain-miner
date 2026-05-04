@@ -52,7 +52,13 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 	}
 
 	var bits uint32
-	fmt.Sscanf(info.Bits, "%x", &bits)
+	n, err := fmt.Sscanf(info.Bits, "%x", &bits)
+	if err != nil || n != 1 {
+		return nil, fmt.Errorf("failed to parse bits value: %q", info.Bits)
+	}
+	if bits == 0 {
+		return nil, fmt.Errorf("invalid zero bits value from RPC")
+	}
 
 	newHeight := info.Height + 1
 	subsidy := calcSubsidy(info.Chain, newHeight)
