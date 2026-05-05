@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/algorithm"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 // Stats holds stratum mining statistics.
@@ -65,6 +65,9 @@ type Client struct {
 	difficulty   float64
 	diffMu       sync.RWMutex
 
+	requestTimes map[uint64]time.Time
+	lastLatency  atomic.Int64 // nanoseconds
+
 	currentJob   *Job
 	jobMu        sync.RWMutex
 
@@ -95,6 +98,7 @@ func NewClient(addr, workerName, password string, hasher *algorithm.Hasher, onLo
 		jobCh:      make(chan *Job, 4),
 		errCh:      make(chan error, 1),
 		onLog:      onLog,
+		requestTimes: make(map[uint64]time.Time),
 	}
 }
 
@@ -185,6 +189,11 @@ func (c *Client) CurrentDifficulty() float64 {
 	return c.difficulty
 }
 
+// LastLatency returns the RTT of the last server response.
+func (c *Client) LastLatency() time.Duration {
+	return time.Duration(c.lastLatency.Load())
+}
+
 // Run starts the read loop that processes server messages. Blocks until ctx
 // is cancelled or the connection is closed.
 func (c *Client) Run(ctx context.Context) {
@@ -266,6 +275,17 @@ func (c *Client) handleMessage(line string) {
 		return
 	}
 
+	// Measure latency if this is a response to a tracked ID
+	if msg.ID != nil {
+		id := parseStratumID(msg.ID)
+		c.writeMu.Lock()
+		if start, ok := c.requestTimes[id]; ok {
+			c.lastLatency.Store(int64(time.Since(start)))
+			delete(c.requestTimes, id)
+		}
+		c.writeMu.Unlock()
+	}
+
 	// Server notification (no id or null id).
 	if msg.Method != "" {
 		switch msg.Method {
@@ -344,12 +364,12 @@ func (c *Client) handleNotify(params json.RawMessage) {
 	bits := decodeHexUint32BE(bitsHex)
 	ntime := decodeHexUint32BE(ntimeHex)
 
-	netTarget := compactToHash(bits)
+	netTarget := CompactToHash(bits)
 
 	c.diffMu.RLock()
 	diff := c.difficulty
 	c.diffMu.RUnlock()
-	shareTarget := difficultyToTarget(diff)
+	shareTarget := DifficultyToTarget(diff)
 
 	job := &Job{
 		ID:           jobID,
@@ -492,7 +512,26 @@ func (c *Client) nextID() uint64 {
 	return c.msgID.Add(1)
 }
 
+func parseStratumID(id interface{}) uint64 {
+	switch v := id.(type) {
+	case float64:
+		return uint64(v)
+	case uint64:
+		return v
+	}
+	return 0
+}
+
 func (c *Client) sendJSON(v interface{}) error {
+	msgMap, ok := v.(map[string]interface{})
+	if ok {
+		if id, ok := msgMap["id"].(uint64); ok {
+			c.writeMu.Lock()
+			c.requestTimes[id] = time.Now()
+			c.writeMu.Unlock()
+		}
+	}
+
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -556,12 +595,14 @@ func (c *Client) Extranonce2Len() int {
 // NextExtranonce2 generates a unique extranonce2 for a worker.
 func (c *Client) NextExtranonce2() []byte {
 	size := c.extranonce2Len
-	if size < 4 {
-		size = 4
-	}
 	en2 := make([]byte, size)
 	val := c.en2ID.Add(1)
-	binary.BigEndian.PutUint64(en2[len(en2)-8:], val)
+	
+	// Write exactly as many bytes as available in the buffer
+	for i := 0; i < size; i++ {
+		en2[size-1-i] = byte(val >> (i * 8))
+	}
+	
 	return en2
 }
 
@@ -616,7 +657,8 @@ func encodeUint32LE(v uint32) string {
 	return hex.EncodeToString(buf[:])
 }
 
-func compactToHash(compact uint32) types.Hash {
+// CompactToHash converts Bitcoin compact bits to a 256-bit target hash.
+func CompactToHash(compact uint32) types.Hash {
 	mantissa := compact & 0x007fffff
 	exponent := compact >> 24
 
@@ -640,7 +682,8 @@ func compactToHash(compact uint32) types.Hash {
 	return h
 }
 
-func difficultyToTarget(diff float64) types.Hash {
+// DifficultyToTarget converts a relative difficulty value to a target hash.
+func DifficultyToTarget(diff float64) types.Hash {
 	if diff <= 0 {
 		diff = 1
 	}
@@ -669,6 +712,25 @@ func difficultyToTarget(diff float64) types.Hash {
 	return h
 }
 
+// HashToDifficulty calculates the relative difficulty from a target hash.
+func HashToDifficulty(h types.Hash) float64 {
+	var high128 big.Int
+	b := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		b[i] = h[16+(15-i)]
+	}
+	high128.SetBytes(b)
+
+	if high128.Sign() == 0 {
+		return 0
+	}
+
+	exp96 := new(big.Float).SetPrec(256).SetInt(new(big.Int).Lsh(big.NewInt(1), 96))
+	valf := new(big.Float).SetPrec(256).SetInt(&high128)
+
+	diff, _ := new(big.Float).SetPrec(256).Quo(exp96, valf).Float64()
+	return diff
+}
 // ValidHashRaw replicates cpuminer's raw hash comparison.
 func ValidHashRaw(hash, target types.Hash) bool {
 	for i := 7; i >= 0; i-- {

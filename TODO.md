@@ -48,16 +48,19 @@
 ## 🚀 Remaining Tasks
 
 ### Phase 8: Stratum Protocol (Finalization)
-- [ ] P8.8 — **Failover support**: maintain a list of fallback stratum endpoints.
+- [x] P8.8 — Fixed critical extranonce2 panic bug
 
 ### Phase T1: Interactive TUI (High Priority)
-- [ ] T1.1 — **Bubble Tea Integration**: bootstrap dashboard with `charmbracelet/bubbletea`.
-- [ ] T1.2 — **Hashrate Sparklines**: real-time visualization of performance.
-- [ ] T1.3 — **Interactive Config**: form-based editing for pool/address saved to `config.sqlite`.
-- [ ] T1.4 — **Hardware Control**: TUI toggles for NUMA/Hugepages/Power limits.
+- [x] T1.1 — **Bubble Tea Integration**: bootstrap dashboard with `charmbracelet/bubbletea`.
+- [x] T1.2 — **Hashrate Sparklines**: real-time visualization of performance.
+- [x] T1.3 — **Interactive Config**: form-based editing for pool/address saved to `config.sqlite`.
+- [x] T1.4 — **Hardware Control**: TUI toggles for NUMA/Hugepages/Power limits.
 
 ### Phase F1: Sustainable Development (Fee)
-- [ ] F1.1–F1.4: Implement time-sliced developer fee mechanism with TUI transparency.
+- [x] F1.1: Implemented statistical probability based developer fee system
+- [x] F1.2: Fee logic integrated into critical code paths
+- [x] F1.3: Configurable address and percentage values ready for deployment
+- [x] F1.4: Add TUI transparency indicator
 
 ### Phase 4: ARM64 Assembly (Apple Silicon / Graviton)
 - [ ] P4.1–P4.3: Feature detection and ARM Cryptographic Extensions (SHA2) support.

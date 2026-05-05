@@ -13,6 +13,9 @@ build:
 	mkdir -p $(BINDIR)
 	$(GO) build -v -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
+build-tui:
+	$(GO) build -v -o $(BINDIR)/$(BINARY)-tui ./cmd/fairchain-miner
+
 # Optimized build for specific architectures
 build-amd64:
 	GOOS=linux GOARCH=amd64 $(GO) build -v -o $(BINDIR)/$(BINARY)-linux-amd64 ./cmd/fairchain-miner

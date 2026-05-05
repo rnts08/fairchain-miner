@@ -15,8 +15,8 @@ import (
 	"hash"
 	"unsafe"
 
-	"github.com/bams-repo/fairchain-miner/pkg/memory"
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/memory"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 // prefetcht0 is implemented in assembly for supported architectures.

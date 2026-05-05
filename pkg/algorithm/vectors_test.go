@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 type testVector struct {

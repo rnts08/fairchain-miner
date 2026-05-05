@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
+	"github.com/rnts08/fairchain-miner/pkg/algorithm"
 )
 
 type vector struct {

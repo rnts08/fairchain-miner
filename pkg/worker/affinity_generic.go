@@ -11,3 +11,4 @@ package worker
 func SetAffinity(cpuID int) error {
 	return nil
 }
+func UnsetAffinity() error { return nil }

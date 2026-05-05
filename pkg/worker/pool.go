@@ -15,11 +15,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bams-repo/fairchain-miner/pkg/algorithm"
-	"github.com/bams-repo/fairchain-miner/pkg/memory"
-	"github.com/bams-repo/fairchain-miner/pkg/metrics"
-	"github.com/bams-repo/fairchain-miner/pkg/template"
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/algorithm"
+	"github.com/rnts08/fairchain-miner/pkg/memory"
+	"github.com/rnts08/fairchain-miner/pkg/metrics"
+	"github.com/rnts08/fairchain-miner/pkg/template"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 // MineResult holds the outcome of a mining attempt.
@@ -33,6 +33,7 @@ type MineResult struct {
 type Pool struct {
 	numWorkers int
 	powerLimit int // 1-100
+	trackers   []*metrics.HashrateTracker
 }
 
 // NewPool creates a new worker pool.
@@ -46,10 +47,23 @@ func NewPool(numWorkers, powerLimit int) *Pool {
 	if powerLimit > 100 {
 		powerLimit = 100
 	}
+	trackers := make([]*metrics.HashrateTracker, numWorkers)
+	for i := range trackers {
+		trackers[i] = metrics.NewHashrateTracker()
+	}
 	return &Pool{
 		numWorkers: numWorkers,
 		powerLimit: powerLimit,
+		trackers:   trackers,
 	}
+}
+
+func (p *Pool) WorkerRates() []float64 {
+	rates := make([]float64, len(p.trackers))
+	for i, t := range p.trackers {
+		rates[i] = t.Rate()
+	}
+	return rates
 }
 
 // Mine searches for a valid PoW nonce across all workers.
@@ -97,12 +111,21 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 		go func(workerID int, sn, en uint64) {
 			defer wg.Done()
 
-			// P5.4: Set CPU affinity to pin the worker to a specific core.
-			_ = SetAffinity(workerID)
+			// Each worker gets its own NUMA-aware workspace.
+			node := memory.GetNodeForCPU(workerID)
+			ws := algorithm.NewWorkspaceOnNode(node)
+
+			lastAffinity := IsAffinityEnabled() // Capture initial state
+			if lastAffinity {
+				_ = SetAffinity(workerID)
+			}
 
 			// P5.3: Set NUMA-aware allocation.
 			node := memory.GetNodeForCPU(workerID)
 			ws := algorithm.NewWorkspaceOnNode(node)
+
+			lastNuma := memory.IsNumaEnabled()
+			lastHuge := memory.IsHugepagesEnabled()
 
 			// Each worker gets its own copy of the header bytes to stamp nonces into.
 			var headerBuf [types.BlockHeaderSize]byte
@@ -119,6 +142,27 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 				case <-mineCtx.Done():
 					return
 				default:
+				}
+
+				// Check for hardware setting changes (NUMA/Hugepages/Affinity)
+				if pos%1024 == 0 {
+					if IsAffinityEnabled() != lastAffinity {
+						// Affinity changed, re-apply
+						if IsAffinityEnabled() {
+							_ = SetAffinity(workerID)
+						} else {
+							_ = UnsetAffinity()
+						}
+						lastAffinity = IsAffinityEnabled()
+					}
+
+					// Memory settings changed, re-allocate workspace
+					if memory.IsNumaEnabled() != lastNuma || memory.IsHugepagesEnabled() != lastHuge {
+						ws.Free()
+						lastNuma = memory.IsNumaEnabled()
+						lastHuge = memory.IsHugepagesEnabled()
+						ws = algorithm.NewWorkspaceOnNode(node)
+					}
 				}
 
 				batchStart := time.Now()
@@ -143,9 +187,10 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 				}
 
 				// Power limit throttling.
-				if p.powerLimit < 100 {
+				currPower := GetGlobalPowerLimit()
+				if currPower < 100 {
 					elapsed := time.Since(batchStart)
-					sleepRatio := float64(100-p.powerLimit) / float64(p.powerLimit)
+					sleepRatio := float64(100-currPower) / float64(currPower)
 					time.Sleep(time.Duration(float64(elapsed) * sleepRatio))
 				}
 			}

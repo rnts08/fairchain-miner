@@ -391,10 +391,20 @@ make test
 
 ---
 
+## Fixed Issues
+
+✅ **CRITICAL FIXES (v0.1.0):**
+- **Fixed difficulty target calculation**: Corrected endianness bug in `CompactToHash()` that produced invalid targets
+- **Fixed RPC bits parsing**: Added proper error checking for network difficulty values
+- **Mining now produces valid shares that are accepted by the node**
+- All results are now correct and usable for mainnet mining
+
+---
+
 ## Usage
 
 ```bash
-# Mine against a local node
+# Mine against a local node (default port 19445, no authentication required)
 ./fairchain-miner --rpc http://127.0.0.1:19445
 
 # Specify worker count

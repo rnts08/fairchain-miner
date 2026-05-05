@@ -16,7 +16,9 @@ type HashrateTracker struct {
 	totalHashes atomic.Uint64
 
 	mu            sync.Mutex
-	ewmaRate      float64
+	rate1m        float64
+	rate15m       float64
+	rate24h       float64
 	lastSnapCount uint64
 	lastSnapTime  time.Time
 	snapCount     int
@@ -29,6 +31,8 @@ type HashrateTracker struct {
 // EWMA smoothing factor. With a 3-second sample interval, this gives
 // an effective time constant of ~60 seconds: alpha = 1 - exp(-3/60) ≈ 0.049.
 const ewmaAlpha = 0.049
+const alpha15m = 0.0033
+const alpha24h = 0.0000347
 
 // NewHashrateTracker creates and starts a new hashrate tracker.
 func NewHashrateTracker() *HashrateTracker {
@@ -70,7 +74,14 @@ func (t *HashrateTracker) TotalHashes() uint64 {
 func (t *HashrateTracker) Rate() float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.ewmaRate
+	return t.rate1m
+}
+
+// Rates returns 1m, 15m, and 24h averages.
+func (t *HashrateTracker) Rates() (float64, float64, float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.rate1m, t.rate15m, t.rate24h
 }
 
 // Stop stops the background snapshot goroutine.
@@ -100,8 +111,12 @@ func (t *HashrateTracker) snapshot() {
 	t.snapCount++
 
 	if t.snapCount == 1 {
-		t.ewmaRate = instantRate
+		t.rate1m = instantRate
+		t.rate15m = instantRate
+		t.rate24h = instantRate
 	} else {
-		t.ewmaRate = ewmaAlpha*instantRate + (1-ewmaAlpha)*t.ewmaRate
+		t.rate1m = ewmaAlpha*instantRate + (1-ewmaAlpha)*t.rate1m
+		t.rate15m = alpha15m*instantRate + (1-alpha15m)*t.rate15m
+		t.rate24h = alpha24h*instantRate + (1-alpha24h)*t.rate24h
 	}
 }
