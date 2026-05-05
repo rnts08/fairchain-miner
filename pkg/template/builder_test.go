@@ -7,8 +7,8 @@ package template
 import (
 	"testing"
 
-	"github.com/bams-repo/fairchain-miner/pkg/rpc"
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/rpc"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 func TestBuildTemplate(t *testing.T) {

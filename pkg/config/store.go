@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+// Package config provides persistent storage for miner settings.
 package config
 
 import (
@@ -77,6 +78,7 @@ func (s *Store) Load() (*Config, error) {
 		Scan(&cfg.StratumAddr, &cfg.StratumUser, &cfg.NumaEnabled, &cfg.HugepagesEnabled, &cfg.AffinityEnabled, &cfg.PowerLimit, &cfg.ThermalLimit, &cfg.PowerSavingsEnabled, &cfg.PowerSavingsThreshold, &cfg.TurboModeEnabled, &cfg.TotalAcceptedShares, &cfg.TotalRejectedShares, &cfg.TotalStaleShares)
 
 	if err == sql.ErrNoRows {
+		// If no rows, return default config
 		return cfg, nil
 	}
 	return cfg, err
@@ -88,10 +90,19 @@ func (s *Store) Save(cfg *Config) error {
 	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
 
 	_, err := s.db.Exec(query,
-		cfg.StratumAddr, cfg.StratumUser,
-		boolToInt(cfg.NumaEnabled), boolToInt(cfg.HugepagesEnabled), boolToInt(cfg.AffinityEnabled),
-		cfg.PowerLimit, cfg.ThermalLimit, boolToInt(cfg.PowerSavingsEnabled), cfg.PowerSavingsThreshold,
-		boolToInt(cfg.TurboModeEnabled), cfg.TotalAcceptedShares, cfg.TotalRejectedShares, cfg.TotalStaleShares,
+		cfg.StratumAddr,
+		cfg.StratumUser,
+		boolToInt(cfg.NumaEnabled),
+		boolToInt(cfg.HugepagesEnabled),
+		boolToInt(cfg.AffinityEnabled),
+		cfg.PowerLimit,
+		cfg.ThermalLimit,
+		boolToInt(cfg.PowerSavingsEnabled),
+		cfg.PowerSavingsThreshold,
+		boolToInt(cfg.TurboModeEnabled),
+		cfg.TotalAcceptedShares,
+		cfg.TotalRejectedShares,
+		cfg.TotalStaleShares,
 	)
 	return err
 }

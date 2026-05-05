@@ -68,7 +68,7 @@ func (m Model) updateHardware(msg tea.Msg) (Model, tea.Cmd) {
 				m.hwState.Cursor--
 			}
 		case "down", "j":
-			if m.hwState.Cursor < len(options)-1 { // Adjust for new options
+			if m.hwState.Cursor < 7 { // 8 options, 0-7
 				m.hwState.Cursor++
 			}
 		case " ":
@@ -85,6 +85,9 @@ func (m Model) updateHardware(msg tea.Msg) (Model, tea.Cmd) {
 			case 4: // Power Savings Mode
 				m.hwState.PowerSavingsEnabled = !m.hwState.PowerSavingsEnabled
 				return m, func() tea.Msg { return ToggleHardwareMsg("power_savings") }
+			case 7: // Turbo Mode
+				m.hwState.TurboModeEnabled = !m.hwState.TurboModeEnabled
+				return m, func() tea.Msg { return ToggleHardwareMsg("turbo") }
 			}
 		case "right", "l":
 			if m.hwState.Cursor == 3 && m.hwState.PowerLimit < 100 {
@@ -112,6 +115,9 @@ func (m Model) updateHardware(msg tea.Msg) (Model, tea.Cmd) {
 				m.hwState.ThermalLimit -= 1
 				return m, func() tea.Msg { return ToggleHardwareMsg("thermal") }
 			}
+		case "m", "esc":
+			m.showHardwareMenu = false
+			return m, nil
 		}
 	}
 	return m, nil

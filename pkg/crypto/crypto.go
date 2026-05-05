@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"math/big"
 
-	"github.com/bams-repo/fairchain-miner/pkg/types"
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
 // HashBlockHeader computes double sha256 hash of block header

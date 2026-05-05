@@ -121,9 +121,6 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 			}
 
 			// P5.3: Set NUMA-aware allocation.
-			node := memory.GetNodeForCPU(workerID)
-			ws := algorithm.NewWorkspaceOnNode(node)
-
 			lastNuma := memory.IsNumaEnabled()
 			lastHuge := memory.IsHugepagesEnabled()
 

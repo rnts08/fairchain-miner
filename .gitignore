@@ -12,5 +12,11 @@
 # Binaries
 fairchain-miner
 fairchain-miner-tui
+cpu.prof
+algorithm.test
+
 # Docs
 docs/tui_fee_design.md
+
+# config database
+config.sqlite

@@ -17,7 +17,7 @@ func TestDifficultyConversions(t *testing.T) {
 	tests := []float64{0.001, 1.0, 10.0, 256.0}
 
 	for _, diff := range tests {
-		target := difficultyToTarget(diff)
+		target := DifficultyToTarget(diff)
 		if target == types.ZeroHash {
 			t.Errorf("expected non-zero target for diff %f", diff)
 		}

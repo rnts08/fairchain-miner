@@ -68,8 +68,9 @@ type NetworkMsg struct {
 	Stale    int64
 }
 type WorkerStatsMsg struct {
-	Rates []float64
-	Temps []float64
+	Rates   []float64
+	Temps   []float64
+	Latency time.Duration
 }
 
 type ViewMode int
@@ -146,6 +147,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConfig(msg)
 	}
 
+	if m.showHardwareMenu {
+		return m.updateHardware(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -183,7 +188,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "f": // Log Filter
 			m.logFilter = (m.logFilter + 1) % 3
-			return m.refreshLogs(), nil
+			m.refreshLogs()
+			return m, nil
 		case "ctrl+l": // Clear logs
 			m.allLogs = nil
 			m.logViewport.SetContent("")
@@ -276,7 +282,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.allLogs) > 200 { // Increased log buffer
 			m.allLogs = m.allLogs[1:]
 		}
-		return m.refreshLogs(), nil
+		m.refreshLogs()
+		return m, nil
 
 	case ToggleHardwareMsg:
 		// Trigger backend hooks based on TUI actions
@@ -313,6 +320,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) Init() tea.Cmd {
+	return nil
 }
 
 func (m Model) View() string {
@@ -389,18 +400,22 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.focusIndex == len(m.inputs) {
 				m.viewMode = ViewDashboard
-				m.target = m.inputs[0].Value()
-				m.initialConfig.StratumAddr = m.inputs[0].Value()
-				m.initialConfig.StratumUser = m.inputs[1].Value()
-
-				if err := m.configStore.Save(m.initialConfig); err != nil {
-					m.Logf("Error saving config: %v", err)
-				} else {
-					m.Logf("Config saved: Address=%s, User=%s", m.initialConfig.StratumAddr, m.initialConfig.StratumUser)
+				
+				// Only update Stratum config if input actually changed and is not a solo RPC address
+				newAddr := m.inputs[0].Value()
+				newUser := m.inputs[1].Value()
+				
+				// Do NOT save solo RPC addresses into Stratum config field
+				if !strings.HasPrefix(strings.ToLower(newAddr), "http://") && !strings.HasPrefix(strings.ToLower(newAddr), "https://") {
+					m.initialConfig.StratumAddr = newAddr
+					m.initialConfig.StratumUser = newUser
 				}
 
-				// Re-initialize target for display
-				m.target = m.initialConfig.StratumAddr
+				if err := m.configStore.Save(m.initialConfig); err != nil {
+					m.Logf(LogMining, "Error saving config: %v", err)
+				} else {
+					m.Logf(LogMining, "Config saved: Address=%s, User=%s", m.initialConfig.StratumAddr, m.initialConfig.StratumUser)
+				}
 
 				return m, nil
 			}
@@ -510,6 +525,58 @@ func (m Model) renderQuickStats() string {
 		fmt.Sprintf("%s %s", statLabelStyle.Render(" 24h:"), statValueStyle.Render(metrics.FormatHashrate(m.rate24h))),
 	)
 	return boxStyle.Padding(1, 2).Render(content)
+}
+
+func (m Model) Logf(cat LogType, format string, args ...interface{}) {
+	m.Log(fmt.Sprintf(format, args...), cat)
+}
+
+func (m Model) LogMining(msg string) {
+	m.Log(msg, LogMining)
+}
+
+func (m Model) LogStratum(msg string) {
+	m.Log(msg, LogStratum)
+}
+
+func (m Model) Log(msg string, cat LogType) {
+	entry := LogEntry{
+		Timestamp: time.Now().Format("15:04:05"),
+		Text:      msg,
+		Type:      cat,
+	}
+	m.allLogs = append(m.allLogs, entry)
+	if len(m.allLogs) > 200 {
+		m.allLogs = m.allLogs[1:]
+	}
+	m.refreshLogs()
+}
+
+func (m Model) refreshLogs() {
+	var filtered []LogEntry
+	for _, entry := range m.allLogs {
+		if m.logFilter == 0 || int(entry.Type) == m.logFilter-1 {
+			filtered = append(filtered, entry)
+		}
+	}
+
+	var content strings.Builder
+	for _, entry := range filtered {
+		typeStr := ""
+		switch entry.Type {
+		case LogMining:
+			typeStr = statLabelStyle.Render("[M]")
+		case LogStratum:
+			typeStr = statLabelStyle.Render("[S]")
+		}
+		content.WriteString(fmt.Sprintf("%s %s %s\n", entry.Timestamp, typeStr, entry.Text))
+	}
+	m.logViewport.SetContent(content.String())
+}
+
+func CheckPowerSavings(app *App, workers int) {
+	// Placeholder for power savings check
+	// Could check battery status or other conditions
 }
 
 func GetCPUTemps(count int) []float64 {
@@ -625,33 +692,30 @@ type App struct {
 func NewApp(workers int, algo string, initialCfg *config.Config, store *config.Store) *App {
 	m := NewModel("v0.1.0", algo, workers, initialCfg, store)
 
+	a := &App{
+		prog: tea.NewProgram(m, tea.WithAltScreen()),
+	}
+
 	// Start a goroutine to periodically check battery status for power savings
 	go func() {
 		ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
 		defer ticker.Stop()
 		for range ticker.C {
 			// Send a message to the TUI model to update battery status
-			CheckPowerSavings(m.App, m.workers) // Pass app and workers for context
+			CheckPowerSavings(a, workers)
 		}
 	}()
 
-	return &App{
-		prog: tea.NewProgram(m, tea.WithAltScreen()),
-	}
+	return a
 }
 
 func (a *App) Run() error {
-	// The program's Init method will start the battery check goroutine.
-	// We need to ensure the program is running before sending messages.
-	// This is a simplified approach; a more robust solution might involve
-	// a dedicated service for battery monitoring.
-	go func() {
-		// Initial battery check
-		CheckPowerSavings(a, a.prog.Model().(Model).workers)
-	}()
-
 	finalModel, err := a.prog.Run()
-	return finalModel.(Model).saveConfig() // Save config on exit
+	if err != nil {
+		return err
+	}
+	finalModel.(Model).saveConfig()
+	return nil
 }
 
 func (a *App) Log(msg string, cat LogType) { a.prog.Send(LogMsg{Text: msg, Type: cat}) }
@@ -719,8 +783,15 @@ func NewModel(version, algo string, workers int, initialCfg *config.Config, stor
 }
 
 func (m Model) saveConfig() tea.Cmd {
+	// Never save HTTP RPC addresses into Stratum config field (fixes #1 protocol error bug)
+	stratumAddr := m.inputs[0].Value()
+	if strings.HasPrefix(strings.ToLower(stratumAddr), "http://") || strings.HasPrefix(strings.ToLower(stratumAddr), "https://") {
+		// If it's an RPC address, leave existing Stratum config untouched
+		stratumAddr = m.initialConfig.StratumAddr
+	}
+
 	cfg := &config.Config{
-		StratumAddr:           m.inputs[0].Value(),
+		StratumAddr:           stratumAddr,
 		StratumUser:           m.inputs[1].Value(),
 		NumaEnabled:           m.hwState.NumaEnabled,
 		HugepagesEnabled:      m.hwState.HugepagesEnabled,
