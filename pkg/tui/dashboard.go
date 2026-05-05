@@ -169,7 +169,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Initialize config form with current values
 			m.viewMode = ViewConfig
 			m.inputs[0].SetValue(m.target)
-			m.inputs[1].SetValue(m.initialConfig.StratumUser) // Assuming initialConfig holds the user
+			m.inputs[1].SetValue(m.initialConfig.StratumUser)
+			m.inputs[2].SetValue(fmt.Sprintf("%d", m.workers))
+			m.inputs[3].SetValue(fmt.Sprintf("%d", m.hwState.PowerLimit))
 			m.focusIndex = 0
 			m.inputs[0].Focus()
 		case "s": // Summary View
@@ -200,7 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.logViewport.Width = msg.Width - 4
-		m.logViewport.Height = msg.Height / 3
+		m.logViewport.Height = msg.Height / 5
 
 	case HashrateMsg:
 		m.rate1m = msg.Rate1m
@@ -594,8 +596,18 @@ func GetCPUTemps(count int) []float64 {
 }
 func (m Model) header() string {
 	title := titleStyle.Render(fmt.Sprintf(" FAIRCHAIN MINER %s ", m.version))
-	info := fmt.Sprintf("  Algo: %s | Workers: %d | Uptime: %s ",
-		m.algo, m.workers, time.Since(m.uptime).Round(time.Second))
+	
+	var modeLabel string
+	if strings.HasPrefix(strings.ToLower(m.target), "http://") || strings.HasPrefix(strings.ToLower(m.target), "https://") {
+		modeLabel = fmt.Sprintf(" 🟢 SOLO RPC | %s ", m.target)
+	} else if strings.HasPrefix(strings.ToLower(m.target), "stratum+tcp://") {
+		modeLabel = fmt.Sprintf(" 🟢 STRATUM | %s ", m.target)
+	} else if m.target != "" {
+		modeLabel = fmt.Sprintf(" | %s ", m.target)
+	}
+	
+	info := fmt.Sprintf("  Algo: %s | Workers: %d | Uptime: %s%s",
+		m.algo, m.workers, time.Since(m.uptime).Round(time.Second), modeLabel)
 	return title + info + "\n"
 }
 
@@ -611,7 +623,7 @@ func (m Model) statsRow() string {
 	)
 	statsBox := boxStyle.Width(wStats).Render(stats)
 
-	graph := m.renderSparkline(m.history, wGraph, 5, accentColor, m.maxHashrate)
+	graph := m.renderSparkline(m.history, wGraph, 8, accentColor, m.maxHashrate)
 	graphBox := boxStyle.Width(wGraph + 4).Render(
 		lipgloss.JoinVertical(lipgloss.Center,
 			statLabelStyle.Render("Hashrate History"),
@@ -746,13 +758,19 @@ func (a *App) UpdateSummary(acc, rej, stale int64, avg time.Duration, reward flo
 // NewModel helper updated to initialize HardwareState
 func NewModel(version, algo string, workers int, initialCfg *config.Config, store *config.Store) Model {
 	addr := textinput.New()
-	addr.Placeholder = "Address"
+	addr.Placeholder = "Pool / Node Address (stratum+tcp:// or http://)"
 	user := textinput.New()
-	user.Placeholder = "User/Wallet"
+	user.Placeholder = "Wallet Address / Worker Name"
+	workerCount := textinput.New()
+	workerCount.Placeholder = "Worker Threads"
+	powerLimit := textinput.New()
+	powerLimit.Placeholder = "Power Limit (%)"
 
 	// Initialize text inputs with current config values
 	addr.SetValue(initialCfg.StratumAddr)
 	user.SetValue(initialCfg.StratumUser)
+	workerCount.SetValue(fmt.Sprintf("%d", workers))
+	powerLimit.SetValue(fmt.Sprintf("%d", initialCfg.PowerLimit))
 
 	return Model{
 		version:       version,
@@ -762,7 +780,7 @@ func NewModel(version, algo string, workers int, initialCfg *config.Config, stor
 		logViewport:   viewport.New(0, 0),
 		configStore:   store,
 		initialConfig: initialCfg,
-		inputs:        []textinput.Model{addr, user},
+		inputs:        []textinput.Model{addr, user, workerCount, powerLimit},
 		hwState: HardwareState{
 			NumaEnabled:           memory.IsNumaEnabled(),
 			HugepagesEnabled:      memory.IsHugepagesEnabled(),
