@@ -5,72 +5,35 @@
 
 ---
 
-## ✅ Completed Phases
+## REMAINING TASKS
 
-### Phase 0: Project Scaffolding
-- [x] P0.1–P0.15: Core infrastructure, CLI, RPC client, worker pool, and end-to-end regtest mining.
-
-### Phase 1: Reference Algorithm & Verification
-- [x] P1.1–P1.4: Ported `sha256mem.go`, established 46 consensus test vectors, and verified reference implementation.
-- [x] P1.6–P1.7: Hotspot profiling and isolated `arxFill` implementation.
-
-### Phase 2: Pure Go Optimizations
-- [x] P2.1–P2.2: Pre-allocated scratchpads and reusable SHA-256 hashers (zero-allocation hot path).
-- [x] P2.3–P2.4: Unsafe word access and bounds check elimination.
-- [x] P2.5–P2.6: SHA-256 midstate optimization and batch nonce serialization.
-- [x] P2.7–P2.9: Loop unrolling, prefetch hints, and memory copy reduction.
-- [x] P2.11: Continuous consensus regression verification.
-
-### Phase 3: AMD64 Assembly Kernels
-- [x] P3.1: Runtime CPUID detection (SHA-NI, AVX2, AVX-512).
-- [x] P3.2–P3.3: SHA-NI compression and midstate state injection.
-- [x] P3.4: **Dual-buffer SHA-NI** (2-way interleaved hashing).
-- [x] P3.5–P3.6: **AVX2 & AVX-512 ARX Fill** vectorization.
-- [x] P3.7–P3.8: Software prefetch stubs and runtime dispatcher integration.
-- [x] P3.11: Consensus verification for all ASM codepaths.
-
-### Phase 5: Memory Subsystem
-- [x] P5.1: 2MB Hugepage allocator (`mmap` with `MAP_HUGETLB`).
-- [x] P5.2: 1GB Hugepage support for server workloads.
-- [x] P5.3: **NUMA-aware allocation** (mbind memory to local CPU node).
-- [x] P5.4: CPU affinity/pinning for worker goroutines.
-- [x] P5.5: Lock-free scratchpad pool.
-
-### Phase 8: Stratum Protocol (Core)
-- [x] P8.1–P8.2: Stratum V1 client and job manager.
-- [x] P8.3: **Extranonce rolling logic** (unique search space per worker).
-- [x] P8.4–P8.5: Share submission and Vardiff support.
-- [x] P8.6: **Automatic Reconnection** with exponential backoff.
-- [x] P8.7: Integration testing against fairchain-src pool.
-
+### Phase 1: Proper CI/CD With multi-arch build releases
+- [ ] P1.1: Automatic linting, format, race and testing on push to main 
+- [ ] P1.2: Automatic base benchmarking if possible with github CI or external provider
+- [ ] P1.3: Automatic building of multi-arch releases for different platforms, packages and with shasum documets and release notes.
+- [ ] P1.4: Update Readme me with status badges for security scan, code quality and test coverage
+ 
+### Phase 4: ARM64 Assembly (Apple Silicon / Graviton)
+- [~] P4.2: ARM Cryptographic Extensions (SHA2) implementation (base stubs complete)
+- [~] P4.4: NEON ARX fill vectorization (base stubs complete)
+- [ ] P4.5: Full in depth documenation and discussion in differnt implementation details, catches and optimization parts.
 ---
 
-## 🚀 Remaining Tasks
-
-### Phase 8: Stratum Protocol (Finalization)
-- [x] P8.8 — Fixed critical extranonce2 panic bug
-
-### Phase T1: Interactive TUI (High Priority)
-- [x] T1.1 — **Bubble Tea Integration**: bootstrap dashboard with `charmbracelet/bubbletea`.
-- [x] T1.2 — **Hashrate Sparklines**: real-time visualization of performance.
-- [x] T1.3 — **Interactive Config**: form-based editing for pool/address saved to `config.sqlite`.
-- [x] T1.4 — **Hardware Control**: TUI toggles for NUMA/Hugepages/Power limits.
-
-### Phase F1: Sustainable Development (Fee)
-- [x] F1.1: Implemented statistical probability based developer fee system
-- [x] F1.2: Fee logic integrated into critical code paths
-- [x] F1.3: Configurable address and percentage values ready for deployment
-- [x] F1.4: Add TUI transparency indicator
-
-### Phase 4: ARM64 Assembly (Apple Silicon / Graviton)
-- [ ] P4.1–P4.3: Feature detection and ARM Cryptographic Extensions (SHA2) support.
-- [ ] P4.4–P4.5: NEON ARX fill vectorization and ARM64 dispatcher.
-- [ ] P4.8: Consensus regression on ARM64.
-
 ### Phase 6 & 7: GPU Acceleration (Future)
-- [ ] P6.1–P6.11: CUDA implementation and RTX/A100 benchmarking.
-- [ ] P7.1–P7.6: OpenCL implementation for AMD/Intel GPUs.
+- [~] P6.1: CUDA kernel implementation (base stubs complete)
+- [~] P7.1: OpenCL kernel implementation (base stubs complete)
+- [ ] P7.6: Multi-vendor GPU support (AMD/Intel/NVIDIA)
+- [ ] P7.7: Full in depth documenation and discussion in differnt implementation details, catches and optimization parts.
+---
 
-### Phase 10: Release & Deployment
-- [ ] P10.1–P10.3: GitHub Actions with cross-compilation matrix.
-- [ ] P10.4–P10.6: Versioned binary releases and Dockerization.
+### Phase 10: In TUI Documentation, attribution and share implementation
+- [ ] P10.1: Implement the dev fee properlu
+- [ ] P10.2: Tuning information for operating systems and the application on specific hardware
+- [ ] P10.3: Supporting the project and Licensing
+- [ ] P10.4: General polish, look and feel and logic of the TUI must be intuitive to work with and look nice but not drain too much resources. Such as minimize to tray with mouseover with hashrate etc.
+
+## Pages 11: Cleanup for final 1.0 release
+- [ ] P11.1: Remove, consolidate and finalize documentation - no development docs, no multiple docs and only clear instructions for how to use the application on different systems.
+- [ ] P11.2: Verify that github action CI/CD build successfully build for linux-amd64/arm64, mac-arm64/mac-silicon and windows-amd64
+- [ ] P11.3: Check how to make the miner a drop-in replacement miner for srbminer/ocminer on linux mining os systems
+- [ ] P11.4: Umbrel and other similar services with basic webui click and run for home users.

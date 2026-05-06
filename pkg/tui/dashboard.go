@@ -202,7 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.logViewport.Width = msg.Width - 4
-		m.logViewport.Height = msg.Height / 5
+		m.logViewport.Height = 6
 
 	case HashrateMsg:
 		m.rate1m = msg.Rate1m
@@ -529,18 +529,6 @@ func (m Model) renderQuickStats() string {
 	return boxStyle.Padding(1, 2).Render(content)
 }
 
-func (m Model) Logf(cat LogType, format string, args ...interface{}) {
-	m.Log(fmt.Sprintf(format, args...), cat)
-}
-
-func (m Model) LogMining(msg string) {
-	m.Log(msg, LogMining)
-}
-
-func (m Model) LogStratum(msg string) {
-	m.Log(msg, LogStratum)
-}
-
 func (m Model) Log(msg string, cat LogType) {
 	entry := LogEntry{
 		Timestamp: time.Now().Format("15:04:05"),
@@ -552,6 +540,18 @@ func (m Model) Log(msg string, cat LogType) {
 		m.allLogs = m.allLogs[1:]
 	}
 	m.refreshLogs()
+}
+
+func (m Model) Logf(cat LogType, format string, args ...interface{}) {
+	m.Log(fmt.Sprintf(format, args...), cat)
+}
+
+func (m Model) LogMining(msg string) {
+	m.Log(msg, LogMining)
+}
+
+func (m Model) LogStratum(msg string) {
+	m.Log(msg, LogStratum)
 }
 
 func (m Model) refreshLogs() {
@@ -612,8 +612,8 @@ func (m Model) header() string {
 }
 
 func (m Model) statsRow() string {
-	wStats := m.width / 5
-	wLatency := m.width / 5
+	wStats := m.width / 6
+	wLatency := m.width / 6
 	wGraph := m.width - wStats - wLatency - 6
 
 	stats := lipgloss.JoinVertical(lipgloss.Left,
@@ -623,7 +623,7 @@ func (m Model) statsRow() string {
 	)
 	statsBox := boxStyle.Width(wStats).Render(stats)
 
-	graph := m.renderSparkline(m.history, wGraph, 8, accentColor, m.maxHashrate)
+	graph := m.renderSparkline(m.history, wGraph, 14, accentColor, m.maxHashrate)
 	graphBox := boxStyle.Width(wGraph + 4).Render(
 		lipgloss.JoinVertical(lipgloss.Center,
 			statLabelStyle.Render("Hashrate History"),
@@ -731,11 +731,11 @@ func (a *App) Run() error {
 }
 
 func (a *App) Log(msg string, cat LogType) { a.prog.Send(LogMsg{Text: msg, Type: cat}) }
-func (a *App) LogMining(msg string)        { a.Log(msg, LogMining) }
-func (a *App) LogStratum(msg string)       { a.Log(msg, LogStratum) }
 func (a *App) Logf(cat LogType, format string, args ...interface{}) {
 	a.Log(fmt.Sprintf(format, args...), cat)
 }
+func (a *App) LogMining(msg string)        { a.Log(msg, LogMining) }
+func (a *App) LogStratum(msg string)       { a.Log(msg, LogStratum) }
 func (a *App) UpdateHashrate(r1, r15, r24 float64) {
 	a.prog.Send(HashrateMsg{Rate1m: r1, Rate15m: r15, Rate24h: r24})
 }

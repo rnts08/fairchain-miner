@@ -1,0 +1,19 @@
+// Copyright (c) 2024-2026 The Fairchain Contributors
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+//go:build arm64
+// +build arm64
+
+package algorithm
+
+// ARXFillNEON fills the memory with ARX permutations using NEON vectorization
+// This implementation will be replaced with optimized assembly in P4.4
+func ARXFillNEON(buf []byte, seed uint64) {
+	ARXFillGeneric(buf, seed)
+}
+
+// ARXFillDualNEON performs dual parallel ARX fill using NEON
+func ARXFillDualNEON(buf []byte, seed1, seed2 uint64) {
+	ARXFillDualGeneric(buf, seed1, seed2)
+}

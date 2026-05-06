@@ -2,15 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//go:build !amd64 && !arm64
-// +build !amd64 !arm64
+//go:build amd64 || arm64
+// +build amd64 arm64
 
 package algorithm
 
-var (
-	HasSHANI  = false
-	HasAVX2   = false
-	HasAVX512 = false
-	HasARMCRYPTO = false
-	HasNEON = false
-)
+//go:noescape
+func prefetcht0(addr uintptr)

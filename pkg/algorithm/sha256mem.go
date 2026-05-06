@@ -19,8 +19,7 @@ import (
 	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
-// prefetcht0 is implemented in assembly for supported architectures.
-func prefetcht0(addr uintptr)
+
 
 // Consensus-critical constants. Changing any of these breaks consensus.
 const (

@@ -29,6 +29,26 @@ go test ./pkg/algorithm/... -bench ARXFill -benchmem
 go test ./pkg/algorithm/... -bench SHANI -benchmem
 ```
 
+### Assembly Kernels (ARM64 / Apple Silicon)
+Benchmark ARM specific optimizations:
+```bash
+# ARX Fill (NEON vs Generic)
+go test ./pkg/algorithm/... -bench ARXFill -benchmem
+
+# ARM Cryptographic Extensions (SHA2)
+go test ./pkg/algorithm/... -bench ARMCRYPTO -benchmem
+```
+
+### GPU Acceleration Benchmarks
+Benchmark CUDA and OpenCL implementations:
+```bash
+# CUDA acceleration
+go test ./pkg/algorithm/... -bench CUDA -benchmem -tags cuda
+
+# OpenCL acceleration
+go test ./pkg/algorithm/... -bench OpenCL -benchmem -tags opencl
+```
+
 ## 2. Full Miner Benchmarking Mode
 
 To measure the overall hashrate in a realistic scenario (multiple workers, full mining loop):
@@ -62,7 +82,13 @@ Run with NUMA affinity and hugepages:
 | Intel Alder Lake | i7-1265U | SHA-NI + AVX2 | ~28 H/s |
 | Intel Alder Lake | i7-1265U | SHA-NI Dual + AVX-512 + Hugepages | ~42 H/s |
 | AMD Zen 3 | - | - | TBD |
-| ARM64 (Apple M3) | - | - | TBD |
+| ARM64 (Apple M1) | - | NEON + ARM Crypto | TBD |
+| ARM64 (Apple M2) | - | NEON + ARM Crypto | TBD |
+| ARM64 (Apple M3) | - | NEON + ARM Crypto | TBD |
+| AWS Graviton 3 | - | NEON + ARM Crypto | TBD |
+| NVIDIA RTX 3090 | - | CUDA | TBD |
+| NVIDIA A100 | - | CUDA | TBD |
+| AMD Radeon RX 7900 XTX | - | OpenCL | TBD |
 
 ## 5. Performance Profiling
 

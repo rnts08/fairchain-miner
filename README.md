@@ -1,5 +1,11 @@
 # Fairchain Miner — Hyper-Optimized SHA256-Mem Mining Engine
 
+[![CI Pipeline](https://github.com/rnts08/fairchain-miner/actions/workflows/ci.yml/badge.svg)](https://github.com/rnts08/fairchain-miner/actions/workflows/ci.yml)
+[![Code Coverage](https://codecov.io/gh/rnts08/fairchain-miner/branch/main/graph/badge.svg)](https://codecov.io/gh/rnts08/fairchain-miner)
+[![Go Report Card](https://goreportcard.com/badge/github.com/rnts08/fairchain-miner)](https://goreportcard.com/report/github.com/rnts08/fairchain-miner)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/rnts08/fairchain-miner)](https://github.com/rnts08/fairchain-miner/releases)
+
 > A standalone, performance-obsessed miner for Fairchain's `sha256mem` proof-of-work
 > algorithm. Extracts and optimizes the critical mining hot path for maximum
 > hashrate on server CPUs and GPUs.
