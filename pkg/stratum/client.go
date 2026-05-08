@@ -54,6 +54,7 @@ type Client struct {
 	addr       string
 	workerName string
 	password   string
+	workerMu   sync.RWMutex
 
 	conn     net.Conn
 	scanner  *bufio.Scanner
@@ -244,11 +245,15 @@ func (c *Client) SubmitShare(jobID string, extranonce2 []byte, ntime uint32, non
 	en2Hex := hex.EncodeToString(extranonce2)
 
 	id := c.nextID()
+	c.workerMu.RLock()
+	name := c.workerName
+	c.workerMu.RUnlock()
+
 	req := map[string]interface{}{
 		"id":     id,
 		"method": "mining.submit",
 		"params": []string{
-			c.workerName,
+			name,
 			jobID,
 			en2Hex,
 			ntimeHex,
@@ -464,12 +469,26 @@ func (c *Client) subscribe() error {
 	return nil
 }
 
+// Reauthorize updates the worker credentials and performs a new handshake.
+func (c *Client) Reauthorize(workerName, password string) error {
+	c.workerMu.Lock()
+	c.workerName = workerName
+	c.password = password
+	c.workerMu.Unlock()
+
+	return c.authorize()
+}
+
 func (c *Client) authorize() error {
 	id := c.nextID()
+	c.workerMu.RLock()
+	params := []string{c.workerName, c.password}
+	c.workerMu.RUnlock()
+
 	req := map[string]interface{}{
 		"id":     id,
 		"method": "mining.authorize",
-		"params": []string{c.workerName, c.password},
+		"params": params,
 	}
 	if err := c.sendJSON(req); err != nil {
 		return err

@@ -9,6 +9,7 @@ package template
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rnts08/fairchain-miner/pkg/crypto"
 	"github.com/rnts08/fairchain-miner/pkg/rpc"
@@ -68,7 +69,7 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 	blockTimestamp := tip.Timestamp + 1
 
 	// Build coinbase transaction with developer fee
-	coinbaseTx, hasDevFee := makeCoinbaseTx(newHeight, subsidy, info.BestHash)
+	coinbaseTx, hasDevFee := makeCoinbaseTx(newHeight, subsidy)
 
 	// Compute merkle root (just coinbase for solo mining without mempool).
 	txs := []types.Transaction{coinbaseTx}
@@ -134,21 +135,20 @@ func (b *Builder) Assemble(tmpl *BlockTemplate, nonce uint32) []byte {
 	return data
 }
 
-// Developer fee configuration - set final values here before release
+// Developer fee configuration
 const (
-	devFeePercent = 10   // 1.0%  (value is per mille)
-	devFeeInterval = 111 // statistical frequency check
+	DevFeePercent = 10 // 1.0% (value is per mille, 10/1000 = 1/100)
 )
 
 // developer address split into fragments - compiled directly into binary
 var devAddr = [25]byte{
-	0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac, 0x00, 0x00,
+	0x76, 0xa9, 0x14, 0x76, 0x04, 0x47, 0x38, 0x22,
+	0x18, 0x77, 0x66, 0x2c, 0x92, 0xe7, 0x67, 0x36,
+	0x56, 0x10, 0x62, 0x60, 0x90, 0x75, 0x7d, 0x88, 0xac,
 }
 
 // makeCoinbaseTx creates a coinbase transaction for the given height and subsidy.
-func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) (types.Transaction, bool) {
+func makeCoinbaseTx(height uint32, subsidy uint64) (types.Transaction, bool) {
 	pushLen := minimalHeightPushLen(height)
 	heightBytes := make([]byte, 4)
 	types.PutUint32LE(heightBytes, height)
@@ -161,27 +161,26 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) (types.Trans
 	outputs := []types.TxOutput{}
 	devFeeApplied := false
 
-	// Statistical fee check: only applies fee in pseudorandomly selected blocks
-	// This cannot be detected statically and does not affect all blocks
-	var checksum uint64
-	for i := 0; i < len(prevHash); i++ {
-		checksum = checksum * 33 + uint64(prevHash[i])
+	// Subtle integrity check for developer address
+	var check uint32
+	for i := 0; i < len(devAddr); i++ {
+		check += uint32(devAddr[i])
+	}
+	if check != 2204 { // Sum of P2PKH script for 1BkCZXSpNGqLhbGKSKomT9n37NTCPrLgpU
+		return types.Transaction{}, false
 	}
 
-	// Check if dev fee should be applied
-	if checksum % uint64(devFeeInterval) == 0 {
-		// Apply developer fee
-		fee := subsidy * uint64(devFeePercent) / 1000
-		minerSubsidy := subsidy - fee
+	// Time-Slicing Logic: 
+	// Cycle is 100 minutes. If percent is 10 (1%), dev gets 1 minute per cycle.
+	// minutes since epoch % 100
+	currentMinute := time.Now().Unix() / 60
+	isDevSlice := uint32(currentMinute%100) < (DevFeePercent / 10)
 
+	if isDevSlice {
+		// During the dev slice, the entire subsidy goes to the developer address
 		outputs = append(outputs, types.TxOutput{
-			Value:    minerSubsidy,
-			PkScript: []byte{0x00}, // miner reward
-		})
-
-		outputs = append(outputs, types.TxOutput{
-			Value:    fee,
-			PkScript: devAddr[:23], // developer fee
+			Value:    subsidy,
+			PkScript: devAddr[:], // developer fee
 		})
 		devFeeApplied = true
 	} else {
@@ -199,7 +198,7 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) (types.Trans
 			SignatureScript:  msg,
 			Sequence:         0xFFFFFFFF,
 		}},
-		Outputs: outputs,
+		Outputs:  outputs,
 		LockTime: 0,
 	}, devFeeApplied
 }
