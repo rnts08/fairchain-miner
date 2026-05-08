@@ -4,28 +4,21 @@ import (
 	"crypto/sha256"
 	"hash"
 	"unsafe"
+
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
 
-// Constants for the sha256mem algorithm.
-// Note: These should match pkg/algorithm/sha256mem.go
-const (
-	Slots          = 2097152
-	HardenInterval = 128
-	MixRounds      = 32768
-	ScratchpadSize = Slots * 32
-)
-
-// Hasher maintains the state for a single mining worker to avoid allocations in the hot path.
+// optHasher maintains the state for a single mining worker to avoid allocations in the hot path.
 // It implements Tier 1 Pure Go micro-optimizations.
-type Hasher struct {
+type optHasher struct {
 	scratchpad []byte // 64 MiB pre-allocated scratchpad
 	h          hash.Hash
 	header     [80]byte // Reusable header buffer for nonce updates
 }
 
-// NewHasher allocates a new Hasher with a dedicated scratchpad.
-func NewHasher() *Hasher {
-	return &Hasher{
+// NewOptHasher allocates a new optHasher with a dedicated scratchpad.
+func NewOptHasher() *optHasher {
+	return &optHasher{
 		scratchpad: make([]byte, ScratchpadSize),
 		h:          sha256.New(),
 	}
@@ -34,7 +27,7 @@ func NewHasher() *Hasher {
 // PoWHash calculates the sha256mem hash for the given header.
 // This implementation uses Tier 1 optimizations: pointer arithmetic,
 // bounds check elimination, and state reuse.
-func (ctx *Hasher) PoWHash(header []byte) [32]byte {
+func (ctx *optHasher) PoWHash(header []byte) types.Hash {
 	// Phase 1: Seed
 	ctx.h.Reset()
 	ctx.h.Write(header)
@@ -59,7 +52,7 @@ func (ctx *Hasher) PoWHash(header []byte) [32]byte {
 			// Manual pointer access to bypass Go's bounds checks
 			src := &memBase[i-1]
 			dst := &memBase[i]
-			
+
 			// ARX logic inlined for words 0..7
 			// v = src ^ (index + word_idx); v = ROTL(v, 13); v += src
 			for w := uint32(0); w < 8; w++ {
@@ -75,7 +68,7 @@ func (ctx *Hasher) PoWHash(header []byte) [32]byte {
 	// Phase 3 & 4: Mix Passes
 	var acc [32]byte
 	copy(acc[:], ctx.scratchpad[(Slots-1)*32:])
-	
+
 	// Reusable 64-byte buffer for acc || mem[idx]
 	var mixBuf [64]byte
 
@@ -83,24 +76,24 @@ func (ctx *Hasher) PoWHash(header []byte) [32]byte {
 	for i := 0; i < MixRounds; i++ {
 		// LE32(acc[0:4])
 		idx := *(*uint32)(unsafe.Pointer(&acc[0])) % Slots
-		
+
 		copy(mixBuf[0:32], acc[:])
 		copy(mixBuf[32:64], ctx.scratchpad[idx*32:(idx+1)*32])
-		
+
 		ctx.h.Reset()
 		ctx.h.Write(mixBuf[:])
 		// Use acc[:] to store the sum directly, avoiding allocations
-		ctx.h.Sum(acc[:0]) 
+		ctx.h.Sum(acc[:0])
 	}
 
 	// Pass B: Rotating offset indexing
 	for i := 0; i < MixRounds; i++ {
 		off := (i % 7) * 4 // Cycles through offsets 0, 4, 8, 12, 16, 20, 24
 		idx := *(*uint32)(unsafe.Pointer(&acc[off])) % Slots
-		
+
 		copy(mixBuf[0:32], acc[:])
 		copy(mixBuf[32:64], ctx.scratchpad[idx*32:(idx+1)*32])
-		
+
 		ctx.h.Reset()
 		ctx.h.Write(mixBuf[:])
 		ctx.h.Sum(acc[:0])
@@ -109,18 +102,16 @@ func (ctx *Hasher) PoWHash(header []byte) [32]byte {
 	// Phase 5: Finalize
 	ctx.h.Reset()
 	ctx.h.Write(acc[:])
-	final := ctx.h.Sum(nil)
-	
+
+	var final [32]byte
+	ctx.h.Sum(final[:0])
+
 	// Reverse byte order (LE internal -> PoW result order)
-	var result [32]byte
-	for i := 0; i < 32; i++ {
-		result[i] = final[31-i]
-	}
-	return result
+	return types.Hash(final).Reversed()
 }
 
 // HashWithNonce implements batch nonce serialization.
-func (ctx *Hasher) HashWithNonce(baseHeader []byte, nonce uint32) [32]byte {
+func (ctx *optHasher) HashWithNonce(baseHeader []byte, nonce uint32) types.Hash {
 	if len(ctx.header) == 0 {
 		copy(ctx.header[:], baseHeader)
 	}

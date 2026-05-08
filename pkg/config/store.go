@@ -123,8 +123,8 @@ func (s *Store) Load() (*Config, error) {
 
 func (s *Store) Save(cfg *Config) error {
 	query := `
-	INSERT OR REPLACE INTO settings (id, stratum_addr, stratum_user, numa_enabled, hugepages_enabled, affinity_enabled, power_limit, thermal_limit, power_savings_enabled, power_savings_threshold, turbo_mode_enabled, total_accepted_shares, total_rejected_shares, total_stale_shares, elec_cost, price_oracle_api, hw_tdp, coin_price)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	INSERT OR REPLACE INTO settings (id, stratum_addr, stratum_user, numa_enabled, hugepages_enabled, affinity_enabled, power_limit, thermal_limit, power_savings_enabled, power_savings_threshold, turbo_mode_enabled, template_verification, total_accepted_shares, total_rejected_shares, total_stale_shares, elec_cost, price_oracle_api, hw_tdp, coin_price)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
 
 	_, err := s.db.Exec(query,
 		string(cfg.StratumAddr),
@@ -137,11 +137,12 @@ func (s *Store) Save(cfg *Config) error {
 		boolToInt(cfg.PowerSavingsEnabled),
 		cfg.PowerSavingsThreshold,
 		boolToInt(cfg.TurboModeEnabled),
+		boolToInt(cfg.TemplateVerification),
 		cfg.TotalAcceptedShares,
 		cfg.TotalRejectedShares,
 		cfg.TotalStaleShares,
 		cfg.ElectricityCost,
-		cfg.ElectricityCost,
+		cfg.PriceOracleAPI,
 		cfg.HardwareTDP,
 		cfg.CoinPrice,
 	)

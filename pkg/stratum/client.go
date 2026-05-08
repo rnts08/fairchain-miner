@@ -74,8 +74,8 @@ type Client struct {
 	jobMu        sync.RWMutex
 
 	Stats Stats
-
-	hasher  *algorithm.Hasher
+	
+	hasher  algorithm.Hasher // Changed from *algorithm.Hasher
 	msgID   atomic.Uint64
 	en2ID   atomic.Uint64 // unique id for extranonce2 generation
 
@@ -87,7 +87,7 @@ type Client struct {
 }
 
 // NewClient creates a new stratum client.
-func NewClient(addr, workerName, password string, hasher *algorithm.Hasher, onLog func(string)) *Client {
+func NewClient(addr, workerName, password string, hasher algorithm.Hasher, onLog func(string)) *Client {
 	if password == "" {
 		password = "x"
 	}
@@ -141,7 +141,7 @@ func (c *Client) connectWithRetry(ctx context.Context) error {
 
 func (c *Client) dialAndAuth(ctx context.Context) error {
 	var d net.Dialer
-	addr := c.addr.String()
+	addr := string(c.addr.Bytes())
 	if strings.HasPrefix(addr, "stratum+tcp://") {
 		addr = addr[14:]
 	} else if strings.HasPrefix(addr, "stratum://") {
@@ -169,7 +169,7 @@ func (c *Client) dialAndAuth(ctx context.Context) error {
 	}
 
 	c.log("stratum connected: %s (extranonce1=%s, en2_size=%d)",
-		c.addr.String(), hex.EncodeToString(c.extranonce1), c.extranonce2Len)
+		string(c.addr.Bytes()), hex.EncodeToString(c.extranonce1), c.extranonce2Len)
 
 	return nil
 }
@@ -247,7 +247,7 @@ func (c *Client) SubmitShare(jobID string, extranonce2 []byte, ntime uint32, non
 
 	id := c.nextID()
 	c.workerMu.RLock()
-	name := c.workerName.String()
+	name := string(c.workerName.Bytes())
 	c.workerMu.RUnlock()
 
 	req := map[string]interface{}{
@@ -494,7 +494,7 @@ func (c *Client) Reauthorize(workerName, password string) error {
 func (c *Client) authorize() error {
 	id := c.nextID()
 	c.workerMu.RLock()
-	params := []string{c.workerName.String(), c.password.String()}
+	params := []string{string(c.workerName.Bytes()), string(c.password.Bytes())}
 	c.workerMu.RUnlock()
 
 	req := map[string]interface{}{

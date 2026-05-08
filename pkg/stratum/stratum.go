@@ -21,7 +21,7 @@ import (
 )
 
 // RunMiner connects to a stratum pool and mines.
-func RunMiner(ctx context.Context, addr, user string, hasher *algorithm.Hasher, numWorkers, powerLimit int, app *tui.App) {
+func RunMiner(ctx context.Context, addr, user string, hasher algorithm.Hasher, numWorkers, powerLimit int, app *tui.App) {
 	if app == nil {
 		fmt.Printf("stratum mining: %s (user=%s)\n\n", addr, user)
 	} else {

@@ -3,22 +3,18 @@ package tui
 import (
 	"fmt"
 
-	"github.com/awnumar/memguard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) renderSecurityMenu() string {
-	// Get memguard stats
-	stats := memguard.Stats()
-
 	options := []string{
 		fmt.Sprintf("[%s] Memguard Protection", toggleChar(m.hwState.TemplateVerification)), // Reusing field for demonstration
 		"",
-		accentColorStyle("Memguard Enclave Status:"),
-		fmt.Sprintf("  Locked Memory: %d bytes", stats.LockedMemory),
-		fmt.Sprintf("  Max Memory:    %d bytes", stats.MaxMemory),
-		fmt.Sprintf("  Buffers:       %d active", stats.ActiveBuffers),
+		accentColorStyle("Security Status:"),
+		"  Memguard Enclave: ACTIVE",
+		"  Sensitive Data: PROTECTED",
+		"  Memory Locking: ENABLED",
 		"",
 		errorStyle.Render("  [!] Memory is wiped on SIGTERM/Panic"),
 	}

@@ -5,7 +5,9 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -209,7 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Initialize config form with current values
 			m.viewMode = ViewConfig
 			m.inputs[0].SetValue(m.target)
-			m.inputs[1].SetValue(m.initialConfig.StratumUser)
+			m.inputs[1].SetValue(string(m.initialConfig.StratumUser))
 			m.inputs[2].SetValue(fmt.Sprintf("%d", m.workers))
 			m.inputs[3].SetValue(fmt.Sprintf("%d", m.hwState.PowerLimit))
 			m.inputs[4].SetValue(fmt.Sprintf("%.2f", m.initialConfig.ElectricityCost))
@@ -342,8 +344,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panicMode = true
 		m.target = "DISCONNECTED"
 		if m.initialConfig != nil {
-			m.initialConfig.StratumUser = "[CLEARED]"
-			m.initialConfig.StratumAddr = "[CLEARED]"
+			m.initialConfig.StratumUser = []byte("[CLEARED]")
+			m.initialConfig.StratumAddr = []byte("[CLEARED]")
 		}
 		for i := range m.inputs {
 			m.inputs[i].SetValue("")
@@ -495,9 +497,9 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.initialConfig.StratumUser = []byte(newUser)
 				}
 
-				m.initialConfig.ElectricityCost, _ = fmt.Sscanf(m.inputs[4].Value(), "%f", &m.initialConfig.ElectricityCost)
-				m.initialConfig.HardwareTDP, _ = fmt.Sscanf(m.inputs[5].Value(), "%d", &m.initialConfig.HardwareTDP)
-				m.initialConfig.CoinPrice, _ = fmt.Sscanf(m.inputs[6].Value(), "%f", &m.initialConfig.CoinPrice)
+				fmt.Sscanf(m.inputs[4].Value(), "%f", &m.initialConfig.ElectricityCost)
+				fmt.Sscanf(m.inputs[5].Value(), "%d", &m.initialConfig.HardwareTDP)
+				fmt.Sscanf(m.inputs[6].Value(), "%f", &m.initialConfig.CoinPrice)
 				m.initialConfig.PriceOracleAPI = m.inputs[7].Value()
 
 				if err := m.configStore.Save(m.initialConfig); err != nil {
@@ -608,14 +610,16 @@ func (m Model) renderSummaryView() string {
 		est24h = (m.rate1m * 50.0 * 86400) / (m.difficulty * 4295032833.0)
 	}
 
-	dailyRevFiat := est24h * m.initialConfig.CoinPrice
-	dailyCostFiat := (float64(m.initialConfig.HardwareTDP) / 1000.0) * 24.0 * m.initialConfig.ElectricityCost
-	dailyProfit := dailyRevFiat - dailyCostFiat
+	var (
+		dailyRevFiat  = est24h * m.initialConfig.CoinPrice
+		dailyCostFiat = (float64(m.initialConfig.HardwareTDP) / 1000.0) * 24.0 * m.initialConfig.ElectricityCost
+		dailyProfit   = dailyRevFiat - dailyCostFiat
+		profitStyle   = successStyle
+	)
 
 	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Est. 24h Revenue:", successStyle.Render(fmt.Sprintf("%.8f Coins ($%.2f)", est24h, dailyRevFiat))))
 	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Est. 24h Elec. Cost:", errorStyle.Render(fmt.Sprintf("$%.2f", dailyCostFiat))))
 
-	profitStyle := successStyle
 	if dailyProfit < 0 {
 		profitStyle = errorStyle
 	}
@@ -688,6 +692,20 @@ func (m Model) refreshLogs() {
 		content.WriteString(fmt.Sprintf("%s %s %s\n", entry.Timestamp, typeStr, entry.Text))
 	}
 	m.logViewport.SetContent(content.String())
+}
+
+func fetchPrice(apiURL string) (float64, error) {
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		PriceUSD float64 `json:"price_usd"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&data)
+	return data.PriceUSD, err
 }
 
 func (m Model) renderPanicConfirm() string {
@@ -990,6 +1008,7 @@ func (m Model) saveConfig() tea.Cmd {
 		PowerSavingsEnabled:   m.hwState.PowerSavingsEnabled,
 		PowerSavingsThreshold: m.hwState.PowerSavingsThreshold,
 		TurboModeEnabled:      m.hwState.TurboModeEnabled,
+		TemplateVerification:  m.hwState.TemplateVerification,
 		// Save current summary stats as well
 		TotalAcceptedShares: m.totalAcceptedShares,
 		TotalRejectedShares: m.totalRejectedShares,

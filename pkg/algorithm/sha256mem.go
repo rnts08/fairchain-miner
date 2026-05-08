@@ -129,7 +129,7 @@ func New(useGPU bool, gpuDeviceID int) Hasher {
 		}
 		fmt.Printf("GPU requested but no implementation available. Falling back to CPU.\n")
 	}
-	return NewCPUHasher()
+	return newOptimizedHasher()
 }
 
 // NewCPUHasher creates a new CPU-based Hasher.

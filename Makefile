@@ -5,16 +5,31 @@ BINDIR := bin
 BINARY := fairchain-miner
 GO     ?= go
 
+# Architecture and feature detection for SHA-NI
+HAS_SHA_NI := $(shell grep -q sha_ni /proc/cpuinfo 2>/dev/null && echo "sha_ni" || echo "")
+
+GOFLAGS := -v
+ifneq ($(HAS_SHA_NI),)
+GOFLAGS += -tags $(HAS_SHA_NI)
+endif
+
+# Ensure Go assembler recognizes SHA-NI instructions on AMD64
+ifeq ($(GOARCH),amd64)
+GOFLAGS += -gcflags="-m -l -N" -asmflags="-trimpath=$(shell pwd) -f -s -spectre=all -go-version=$(shell $(GO) version | awk '{print $$3}') -shared -compress-debug-info=false -go-build-id="
+endif
+
+
 # --- Default target ---
 all: build
 
 # --- Build targets ---
 build:
 	mkdir -p $(BINDIR)
-	$(GO) build -v -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
+	rm -f pkg/algorithm/prefetch_amd64.go pkg/algorithm/prefetch_amd64.s
+	$(GO) build $(GOFLAGS) -o $(BINDIR)/$(BINARY) ./cmd/fairchain-miner
 
 build-tui:
-	$(GO) build -v -o $(BINDIR)/$(BINARY)-tui ./cmd/fairchain-miner
+	$(GO) build $(GOFLAGS) -o $(BINDIR)/$(BINARY)-tui ./cmd/fairchain-miner
 
 # Optimized build for specific architectures
 build-amd64:
@@ -64,4 +79,5 @@ run-testnet:
 # --- Clean ---
 clean:
 	rm -rf $(BINDIR)
+	rm -f pkg/algorithm/prefetch_amd64.go pkg/algorithm/prefetch_amd64.s
 	$(GO) clean ./...
