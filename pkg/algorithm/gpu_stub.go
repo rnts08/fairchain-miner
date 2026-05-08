@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//go:build amd64 || arm64
-// +build amd64 arm64
+//go:build !cuda && !opencl
+// +build !cuda,!opencl
 
 package algorithm
 
-//go:noescape
-func prefetcht0(addr uintptr)
+// getGPUHasher returns nil when GPU support is not compiled in.
+func getGPUHasher(gpuDeviceID int) Hasher { return nil }

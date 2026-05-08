@@ -4,19 +4,25 @@
 # IDE
 .idea/
 .vscode/
-.opencode
-.antigravity
+.opencode/
+.antigravity/
 .cursor
 .codex
+AGENT.md
+AGENTS.md
+.agents/*
 
 # Binaries
 fairchain-miner
-fairchain-miner-tui
+fairchain-miner.*
 cpu.prof
+cpu.prof.*
 algorithm.test
+algorithm.test.*
 
 # Docs
 docs/tui_fee_design.md
 
 # config database
 config.sqlite
+.opencode

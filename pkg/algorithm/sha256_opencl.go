@@ -9,7 +9,33 @@ package algorithm
 
 import (
 	"crypto/sha256"
+	"fmt"
+
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
+
+type openclHasher struct {
+	deviceID int
+}
+
+// getGPUHasher is the build-tagged implementation for OpenCL.
+// It should return a GPU-accelerated Hasher if available, otherwise nil.
+func getGPUHasher(gpuDeviceID int) Hasher {
+	// TODO: In a real scenario, this would initialize OpenCL context and kernels for the given deviceID.
+	return &openclHasher{deviceID: gpuDeviceID}
+}
+
+func (h *openclHasher) Name() string { return fmt.Sprintf("sha256mem-opencl-device-%d", h.deviceID) }
+
+func (h *openclHasher) PoWHash(data []byte, ws *Workspace) types.Hash {
+	// TODO: Dispatch to actual OpenCL kernel (P7.1)
+	return NewCPUHasher().PoWHash(data, ws) // Fallback for now
+}
+
+func (h *openclHasher) PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) types.Hash {
+	// TODO: Dispatch to actual OpenCL kernel (P7.1)
+	return NewCPUHasher().PoWHashMidstate(data, ws, midstate) // Fallback for now
+}
 
 // SHA256OpenCL computes SHA-256 hash using OpenCL GPU acceleration
 // Base implementation stub - will be replaced with actual OpenCL kernel calls

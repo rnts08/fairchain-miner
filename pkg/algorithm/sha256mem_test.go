@@ -146,6 +146,49 @@ func TestArxFill(t *testing.T) {
 	}
 }
 
+// TestCPUvsGPUHasher verifies that the GPU implementation (if available)
+// produces identical results to the reference CPU implementation.
+func TestCPUvsGPUHasher(t *testing.T) {
+	// 1. Get GPU hasher. This will be nil if not built with cuda/opencl tags.
+	gpuHasher := getGPUHasher(0)
+	if gpuHasher == nil {
+		t.Skip("GPU hasher not available in this build (cuda or opencl tags required)")
+	}
+
+	cpuHasher := NewCPUHasher()
+	ws := NewWorkspace()
+	defer ws.Free()
+
+	// Test with an 80-byte header.
+	data := make([]byte, 80)
+	for i := range data {
+		data[i] = byte(i * 7) // Use a non-trivial pattern
+	}
+
+	// Test PoWHash
+	cpuHash := cpuHasher.PoWHash(data, ws)
+	gpuHash := gpuHasher.PoWHash(data, ws)
+
+	if cpuHash != gpuHash {
+		t.Errorf("Hasher output mismatch\nCPU: %x\nGPU: %x", cpuHash, gpuHash)
+	}
+
+	// Test PoWHashMidstate
+	h := sha256.New()
+	h.Write(data[:64])
+	midstate, err := h.(encoding.BinaryMarshaler).MarshalBinary()
+	if err != nil {
+		t.Fatalf("failed to marshal midstate: %v", err)
+	}
+
+	cpuHashMid := cpuHasher.PoWHashMidstate(data, ws, midstate)
+	gpuHashMid := gpuHasher.PoWHashMidstate(data, ws, midstate)
+
+	if cpuHashMid != gpuHashMid {
+		t.Errorf("Hasher midstate output mismatch\nCPU: %x\nGPU: %x", cpuHashMid, gpuHashMid)
+	}
+}
+
 // TestPoWHashKnownVector verifies the miner's implementation matches the
 // reference node implementation bit-for-bit. This vector is consensus-critical.
 func TestPoWHashKnownVector(t *testing.T) {

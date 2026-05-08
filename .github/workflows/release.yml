@@ -63,6 +63,13 @@ jobs:
           name: release-binaries
           path: bin/
 
+      - name: Consolidate Checksums
+        run: |
+          cd bin
+          echo "# Fairchain Miner Release Checksums" > SHASUMS256.txt
+          cat *.sha256 >> SHASUMS256.txt
+          rm *.sha256
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:

@@ -9,7 +9,33 @@ package algorithm
 
 import (
 	"crypto/sha256"
+	"fmt"
+
+	"github.com/rnts08/fairchain-miner/pkg/types"
 )
+
+type cudaHasher struct {
+	deviceID int
+}
+
+// getGPUHasher is the build-tagged implementation for CUDA.
+// It returns a CUDA-accelerated Hasher.
+func getGPUHasher(gpuDeviceID int) Hasher {
+	// TODO: In a real scenario, this would initialize CUDA context and kernels for the given deviceID.
+	return &cudaHasher{deviceID: gpuDeviceID}
+}
+
+func (h *cudaHasher) Name() string { return fmt.Sprintf("sha256mem-cuda-device-%d", h.deviceID) }
+
+func (h *cudaHasher) PoWHash(data []byte, ws *Workspace) types.Hash {
+	// TODO: Dispatch to actual CUDA kernel (P6.1)
+	return NewCPUHasher().PoWHash(data, ws) // Fallback for now
+}
+
+func (h *cudaHasher) PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) types.Hash {
+	// TODO: Dispatch to actual CUDA kernel (P6.1)
+	return NewCPUHasher().PoWHashMidstate(data, ws, midstate) // Fallback for now
+}
 
 // SHA256CUDA computes SHA-256 hash using NVIDIA CUDA GPU acceleration
 // Base implementation stub - will be replaced with actual CUDA kernel calls

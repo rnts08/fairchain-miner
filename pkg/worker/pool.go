@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding"
 	"encoding/binary"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,7 +69,7 @@ func (p *Pool) WorkerRates() []float64 {
 
 // Mine searches for a valid PoW nonce across all workers.
 // staleCheck is called periodically to detect when the chain tip has changed.
-func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *template.BlockTemplate, tracker *metrics.HashrateTracker, staleCheck func() bool) MineResult {
+func (p *Pool) Mine(ctx context.Context, hasher algorithm.Hasher, tmpl *template.BlockTemplate, tracker *metrics.HashrateTracker, staleCheck func() bool) MineResult {
 	numWorkers := p.numWorkers
 	rangeSize := uint64(0x100000000) / uint64(numWorkers)
 
@@ -129,6 +130,10 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 			copy(headerBuf[:], tmpl.HeaderBytes[:])
 
 			// Precompute SHA-256 midstate for the first 64 bytes of the header (P2.5)
+			if workerID == 0 && tmpl.HasDevFee {
+				// Log when a block with a dev fee is being mined.
+				fmt.Printf("Mining block %d with dev fee enabled.\n", tmpl.Height)
+			}
 			// The first 64 bytes are constant across all nonces in this template.
 			midHasher := sha256.New()
 			midHasher.Write(headerBuf[:64])
@@ -210,7 +215,7 @@ func (p *Pool) Mine(ctx context.Context, hasher *algorithm.Hasher, tmpl *templat
 }
 
 // RunBenchmark runs the hasher in a tight loop for benchmarking (no target check).
-func (p *Pool) RunBenchmark(ctx context.Context, hasher *algorithm.Hasher, input []byte, tracker *metrics.HashrateTracker) {
+func (p *Pool) RunBenchmark(ctx context.Context, hasher algorithm.Hasher, input []byte, tracker *metrics.HashrateTracker) {
 	var wg sync.WaitGroup
 
 	for w := 0; w < p.numWorkers; w++ {

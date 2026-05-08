@@ -12,14 +12,13 @@ import (
 	"crypto/sha256"
 	"encoding"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"unsafe"
 
 	"github.com/rnts08/fairchain-miner/pkg/memory"
 	"github.com/rnts08/fairchain-miner/pkg/types"
 )
-
-
 
 // Consensus-critical constants. Changing any of these breaks consensus.
 const (
@@ -111,16 +110,33 @@ func (ws *Workspace) sum256Midstate(data []byte, midstate []byte) [32]byte {
 	return res
 }
 
-// Hasher implements the sha256mem PoW hash algorithm.
-// This is the reference Go implementation — bit-exact match with the node's
-// internal/algorithms/sha256mem package.
-type Hasher struct{}
+// Hasher is an interface for the sha256mem PoW hash algorithm.
+// Implementations can be CPU-based or GPU-accelerated.
+type Hasher interface {
+	Name() string
+	PoWHash(data []byte, ws *Workspace) types.Hash
+	PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) types.Hash
+}
 
-// New creates a new sha256mem Hasher.
-func New() *Hasher { return &Hasher{} }
+type cpuHasher struct{}
+
+// New is a dispatcher that returns the appropriate Hasher implementation (CPU or GPU).
+// It attempts to use a GPU hasher if requested and available, otherwise falls back to CPU.
+func New(useGPU bool, gpuDeviceID int) Hasher {
+	if useGPU {
+		if h := getGPUHasher(gpuDeviceID); h != nil {
+			return h
+		}
+		fmt.Printf("GPU requested but no implementation available. Falling back to CPU.\n")
+	}
+	return NewCPUHasher()
+}
+
+// NewCPUHasher creates a new CPU-based Hasher.
+func NewCPUHasher() Hasher { return &cpuHasher{} }
 
 // Name returns the algorithm identifier.
-func (h *Hasher) Name() string { return "sha256mem" }
+func (h *cpuHasher) Name() string { return "sha256mem" }
 
 // PoWHash computes the sha256mem proof-of-work hash.
 // Input is typically the 80-byte serialized block header.
@@ -128,12 +144,12 @@ func (h *Hasher) Name() string { return "sha256mem" }
 //
 // This reference implementation matches internal/algorithms/sha256mem exactly.
 // Optimized variants (ASM, GPU) must produce identical output for all inputs.
-func (h *Hasher) PoWHash(data []byte, ws *Workspace) types.Hash {
+func (h *cpuHasher) PoWHash(data []byte, ws *Workspace) types.Hash {
 	return h.PoWHashMidstate(data, ws, nil)
 }
 
 // PoWHashMidstate computes the PoW hash using an optional precomputed midstate.
-func (h *Hasher) PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) types.Hash {
+func (h *cpuHasher) PoWHashMidstate(data []byte, ws *Workspace, midstate []byte) types.Hash {
 	// Phase 1: Seed
 	var seed [32]byte
 	if midstate != nil && len(data) == 80 {

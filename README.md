@@ -33,9 +33,7 @@
 - [Hardware Targets](#hardware-targets)
 - [Relationship to fairchain-src](#relationship-to-fairchain-src)
 - [Build](#build)
-- [Usage](#usage)
-- [Benchmarking](#benchmarking)
-- [Testing & Correctness](#testing--correctness)
+- [User Guide & Tuning](#user-guide--tuning)
 - [License](#license)
 
 ---
@@ -353,6 +351,21 @@ but the margins should be measured, not assumed.
 
 ---
 
+- **Single-thread hashrate** (H/s per core)
+- **Multi-thread scaling** (H/s vs worker count)
+- **Memory bandwidth utilization** (bytes/s vs theoretical peak)
+- **SHA-256 throughput** (compressions/s with and without hardware acceleration)
+- **Per-phase breakdown** (fill time, mix A time, mix B time, finalize time)
+
+```bash
+# Full benchmark suite
+make bench
+```
+
+## User Guide & Tuning
+
+For detailed instructions on installation, configuration, performance tuning, and benchmarking, please refer to the USER_GUIDE.md.
+
 ## Relationship to fairchain-src
 
 This miner is a **consumer** of fairchain-src, not a fork of it:
@@ -373,102 +386,68 @@ The only shared code paths are:
 
 ---
 
-## Build
+## Installation & Getting Started
+
+Detailed setup instructions, hardware requirements, and troubleshooting steps can be found in the [Installation and Getting Started Guide](DOCS/INSTALLATION_AND_GETTING_STARTED.md).
+
+### Quick Start
 
 ```bash
-# Pure Go (Tier 1 — works everywhere)
+# Build for your current architecture
 make build
 
-# With ASM optimizations (Tier 2 — requires matching CPU features)
-make build-asm
+# Run a local benchmark to check hashrate
+./fairchain-miner -benchmark -workers $(nproc)
 
-# With CUDA (Tier 3 — requires NVIDIA GPU + CUDA toolkit)
-make build-cuda
-
-# With OpenCL (Tier 3 — requires OpenCL runtime)
-make build-opencl
-
-# Run benchmarks
-make bench
-
-# Run consensus vector tests
-make test
+# Start solo mining (requires a running fairchaind node)
+./fairchain-miner -rpc http://127.0.0.1:19445 -user <YOUR_ADDRESS>
 ```
 
----
-
-## Fixed Issues
-
-✅ **CRITICAL FIXES (v0.1.0):**
-- **Fixed difficulty target calculation**: Corrected endianness bug in `CompactToHash()` that produced invalid targets
-- **Fixed RPC bits parsing**: Added proper error checking for network difficulty values
-- **Mining now produces valid shares that are accepted by the node**
-- All results are now correct and usable for mainnet mining
-
----
-
-## Usage
-
+### Performance Tip (Linux)
+Enable 2MB Hugepages for a significant hashrate boost:
 ```bash
-# Mine against a local node (default port 19445, no authentication required)
-./fairchain-miner --rpc http://127.0.0.1:19445
-
-# Specify worker count
-./fairchain-miner --rpc http://127.0.0.1:19445 --workers 16
-
-# Use stratum protocol
-./fairchain-miner --stratum stratum+tcp://pool.example.com:3333 --user wallet_address
-
-# GPU mining (if compiled with CUDA/OpenCL support)
-./fairchain-miner --rpc http://127.0.0.1:19445 --gpu --device 0
-
-# Power limit
-./fairchain-miner --rpc http://127.0.0.1:19445 --power-limit 75
-
-# Benchmark mode (no RPC, just measure hashrate)
-./fairchain-miner --benchmark --workers 8 --duration 60s
+sudo sysctl -w vm.nr_hugepages=1024
 ```
 
----
-
-## Benchmarking
-
-Every optimization is measured against the reference Go implementation using
-frozen test vectors. The benchmark suite measures:
-
-- **Single-thread hashrate** (H/s per core)
-- **Multi-thread scaling** (H/s vs worker count)
-- **Memory bandwidth utilization** (bytes/s vs theoretical peak)
-- **SHA-256 throughput** (compressions/s with and without hardware acceleration)
-- **Per-phase breakdown** (fill time, mix A time, mix B time, finalize time)
-
-```bash
-# Full benchmark suite
-make bench
-
-# Quick single-thread benchmark
-./fairchain-miner --benchmark --workers 1 --duration 30s
-
-# Compare codepaths
-go test ./pkg/algorithm/ -bench=. -benchmem -count=5
-```
-
----
-
-## Testing & Correctness
-
-**Correctness is non-negotiable.** Every optimized codepath must produce
-bit-exact output matching the reference implementation.
-
-- `testdata/vectors.json` contains frozen (input → hash) pairs generated
-  from the reference `sha256mem.go`
-- Every build target (Go, ASM, CUDA, OpenCL) runs the same vector tests
-- CI runs the full test suite on every commit
-- The reference implementation (`pkg/algorithm/sha256mem.go`) is a direct copy
-  of `internal/algorithms/sha256mem/sha256mem.go` and must stay in sync
-
----
+For more advanced configuration, see [TUNING.md](DOCS/TUNING.md).
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+Source avaiable for non-commercial use — see [LICENSE](../LICENSE).
+
+# Developer Fee Design
+
+## 1. Objectives
+- Provide a professional, interactive TUI for real-time monitoring and configuration.
+- Implement a sustainable developer fee mechanism (percentage-based).
+- Support binary-only releases with secure credential management.
+
+## 2. Configuration Storage (SQLite)
+- Use a local `config.sqlite` to persist settings across restarts.
+- **Tables:**
+    - `settings`: Global configuration (Pool URL, User, Pass, Reward Address, DevFee%).
+    - `stats`: Persistent history for hashrate visualization.
+    - `history`: Found blocks and submission results.
+
+## 3. User Interface (Bubble Tea)
+- Use `charmbracelet/bubbletea` for the Elm-style state management.
+- **Components:**
+    - `Header`: Version info, current block height, network difficulty.
+    - `Stats`: Real-time EWMA hashrate, efficiency (H/W), and uptime.
+    - `Graph`: Lipgloss-styled sparklines for hashrate history.
+    - `WorkerTable`: Detailed per-thread utilization and core pinning status.
+    - `ConfigForm`: Interactive field editing with validation.
+
+## 4. Developer Fee Mechanism (Time-Slicing)
+- **Logic:** Instead of a complex multi-identity Stratum client, we use a simple time-slice scheduler.
+- **Execution:**
+    - For every 100 minutes of mining, `Fee%` minutes are dedicated to the developer's address.
+    - The worker pool is paused, Stratum identity is hot-swapped (via `mining.authorize`), and resumes.
+    - Once the slice is finished, it reverts to the user's credentials.
+- **Transparency:** The TUI will clearly indicate "Dev Fee Mining Active" to ensure user trust.
+
+## 5. Binary Release Strategy
+- **Static Linking:** Ensure `sqlite3` and `libusb` (for future GPU) are statically linked for "portable" binaries.
+- **Stripping:** Remove debug symbols to reduce binary size and hinder reverse engineering of proprietary optimizations.
+- **Packaging:** Distribute as single-binary executables for Linux/Windows/macOS.
+

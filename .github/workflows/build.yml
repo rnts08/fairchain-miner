@@ -1,0 +1,89 @@
+name: Build Fairchain Miner
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.22']
+        include:
+          # Linux builds
+          - os: ubuntu-latest
+            target_arch: amd64
+            build_type: standard
+            output_name: fairchain-miner-linux-amd64
+          - os: ubuntu-latest
+            target_arch: amd64
+            build_type: sha_ni
+            output_name: fairchain-miner-linux-amd64-sha_ni
+          - os: ubuntu-latest
+            target_arch: arm64
+            build_type: standard
+            output_name: fairchain-miner-linux-arm64
+          - os: ubuntu-latest
+            target_arch: amd64
+            build_type: cuda
+            output_name: fairchain-miner-linux-amd64-cuda
+            # CUDA requires specific setup
+            setup_cuda: true
+
+          # macOS builds
+          - os: macos-latest
+            target_arch: amd64
+            build_type: standard
+            output_name: fairchain-miner-darwin-amd64
+          - os: macos-latest
+            target_arch: arm64
+            build_type: standard
+            output_name: fairchain-miner-darwin-arm64
+
+          # Windows builds
+          - os: windows-latest
+            target_arch: amd64
+            build_type: standard
+            output_name: fairchain-miner-windows-amd64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Setup CUDA (Linux only)
+        if: matrix.setup_cuda
+        uses: rapidsai/setup-cuda@v1.2.0
+        with:
+          cuda-version: '12.x' # Specify your desired CUDA version
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.build_type }}" == "standard" ]; then
+            make build GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }} GOARCH=${{ matrix.target_arch }}
+          elif [ "${{ matrix.build_type }}" == "sha_ni" ]; then
+            make build-asm GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }} GOARCH=${{ matrix.target_arch }}
+          elif [ "${{ matrix.build_type }}" == "cuda" ]; then
+            make build-cuda GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }} GOARCH=${{ matrix.target_arch }}
+          else
+            echo "Unknown build type: ${{ matrix.build_type }}"
+            exit 1
+          fi
+        env:
+          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }}
+          GOARCH: ${{ matrix.target_arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output_name }}
+          path: bin/${{ matrix.output_name }}

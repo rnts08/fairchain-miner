@@ -33,6 +33,7 @@ type BlockTemplate struct {
 
 	// Full block data needed for submission.
 	CoinbaseTx types.Transaction
+	HasDevFee  bool
 	Txs        []types.Transaction
 }
 
@@ -67,7 +68,7 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 	blockTimestamp := tip.Timestamp + 1
 
 	// Build coinbase transaction with developer fee
-	coinbaseTx := makeCoinbaseTx(newHeight, subsidy, info.BestHash)
+	coinbaseTx, hasDevFee := makeCoinbaseTx(newHeight, subsidy, info.BestHash)
 
 	// Compute merkle root (just coinbase for solo mining without mempool).
 	txs := []types.Transaction{coinbaseTx}
@@ -104,6 +105,7 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 		HeaderBytes: headerBytes,
 		Target:      target,
 		CoinbaseTx:  coinbaseTx,
+		HasDevFee:   hasDevFee,
 		Txs:         txs,
 	}, nil
 }
@@ -146,7 +148,7 @@ var devAddr = [25]byte{
 }
 
 // makeCoinbaseTx creates a coinbase transaction for the given height and subsidy.
-func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) types.Transaction {
+func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) (types.Transaction, bool) {
 	pushLen := minimalHeightPushLen(height)
 	heightBytes := make([]byte, 4)
 	types.PutUint32LE(heightBytes, height)
@@ -157,6 +159,7 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) types.Transa
 	msg = append(msg, []byte("fairchain-miner")...)
 
 	outputs := []types.TxOutput{}
+	devFeeApplied := false
 
 	// Statistical fee check: only applies fee in pseudorandomly selected blocks
 	// This cannot be detected statically and does not affect all blocks
@@ -165,6 +168,7 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) types.Transa
 		checksum = checksum * 33 + uint64(prevHash[i])
 	}
 
+	// Check if dev fee should be applied
 	if checksum % uint64(devFeeInterval) == 0 {
 		// Apply developer fee
 		fee := subsidy * uint64(devFeePercent) / 1000
@@ -179,6 +183,7 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) types.Transa
 			Value:    fee,
 			PkScript: devAddr[:23], // developer fee
 		})
+		devFeeApplied = true
 	} else {
 		// No fee on this block
 		outputs = append(outputs, types.TxOutput{
@@ -196,7 +201,7 @@ func makeCoinbaseTx(height uint32, subsidy uint64, prevHash string) types.Transa
 		}},
 		Outputs: outputs,
 		LockTime: 0,
-	}
+	}, devFeeApplied
 }
 
 // minimalHeightPushLen returns the minimal number of bytes to encode height
