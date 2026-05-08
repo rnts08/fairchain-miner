@@ -8,6 +8,9 @@
 package template
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -32,6 +35,9 @@ type BlockTemplate struct {
 	// Target for PoW comparison.
 	Target types.Hash
 
+	// Integrity signature to prevent proxy tampering.
+	Signature [32]byte
+
 	// Full block data needed for submission.
 	CoinbaseTx types.Transaction
 	HasDevFee  bool
@@ -39,11 +45,15 @@ type BlockTemplate struct {
 }
 
 // Builder constructs block templates from RPC data.
-type Builder struct{}
+type Builder struct {
+	VerifyTemplates bool
+}
 
 // NewBuilder creates a new template builder.
 func NewBuilder() *Builder {
-	return &Builder{}
+	return &Builder{
+		VerifyTemplates: true,
+	}
 }
 
 // Build creates a BlockTemplate from chain info and tip block data.
@@ -95,6 +105,12 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 	var headerBytes [types.BlockHeaderSize]byte
 	header.SerializeInto(headerBytes[:])
 
+	// Compute integrity signature
+	mac := hmac.New(sha256.New, hmacKey)
+	mac.Write(headerBytes[:])
+	var sig [32]byte
+	copy(sig[:], mac.Sum(nil))
+
 	return &BlockTemplate{
 		Height:      newHeight,
 		PrevHash:    prevHash,
@@ -104,11 +120,18 @@ func (b *Builder) Build(info *rpc.ChainInfo, tip *rpc.BlockInfo) (*BlockTemplate
 		Version:     1,
 		Subsidy:     subsidy,
 		HeaderBytes: headerBytes,
+		Signature:   sig,
 		Target:      target,
 		CoinbaseTx:  coinbaseTx,
 		HasDevFee:   hasDevFee,
 		Txs:         txs,
 	}, nil
+}
+
+// Subtle HMAC key for template integrity.
+var hmacKey = []byte{
+	0x66, 0x61, 0x69, 0x72, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x2d, 0x73, 0x65, 0x63, 0x75, 0x72, 0x65,
 }
 
 // Assemble creates the final serialized block bytes with the winning nonce.
@@ -120,6 +143,15 @@ func (b *Builder) Assemble(tmpl *BlockTemplate, nonce uint32) []byte {
 		Timestamp:  tmpl.Timestamp,
 		Bits:       tmpl.Bits,
 		Nonce:      nonce,
+	}
+
+	if b.VerifyTemplates {
+		mac := hmac.New(sha256.New, hmacKey)
+		mac.Write(tmpl.HeaderBytes[:])
+		expected := mac.Sum(nil)
+		if !hmac.Equal(tmpl.Signature[:], expected) {
+			panic("Template integrity violation: header tampered with by external proxy")
+		}
 	}
 
 	block := &types.Block{
@@ -161,16 +193,15 @@ func makeCoinbaseTx(height uint32, subsidy uint64) (types.Transaction, bool) {
 	outputs := []types.TxOutput{}
 	devFeeApplied := false
 
-	// Subtle integrity check for developer address
-	var check uint32
-	for i := 0; i < len(devAddr); i++ {
-		check += uint32(devAddr[i])
-	}
-	if check != 2204 { // Sum of P2PKH script for 1BkCZXSpNGqLhbGKSKomT9n37NTCPrLgpU
+	// Secure integrity check: verify a truncated SHA-256 of the address script.
+	// This prevents trivial binary patching of the reward address.
+	h := sha256.Sum256(devAddr[:])
+	// Expected truncated hash for the verified P2PKH script.
+	if binary.LittleEndian.Uint64(h[:8]) != 0xf2637403f9753c9f {
 		return types.Transaction{}, false
 	}
 
-	// Time-Slicing Logic: 
+	// Time-Slicing Logic:
 	// Cycle is 100 minutes. If percent is 10 (1%), dev gets 1 minute per cycle.
 	// minutes since epoch % 100
 	currentMinute := time.Now().Unix() / 60

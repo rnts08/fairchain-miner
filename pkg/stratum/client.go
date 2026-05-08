@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/awnumar/memguard"
 	"github.com/rnts08/fairchain-miner/pkg/algorithm"
 	"github.com/rnts08/fairchain-miner/pkg/types"
 )
@@ -51,9 +52,9 @@ type Job struct {
 
 // Client is a Stratum V1 mining client.
 type Client struct {
-	addr       string
-	workerName string
-	password   string
+	addr       *memguard.LockedBuffer
+	workerName *memguard.LockedBuffer
+	password   *memguard.LockedBuffer
 	workerMu   sync.RWMutex
 
 	conn     net.Conn
@@ -91,9 +92,9 @@ func NewClient(addr, workerName, password string, hasher *algorithm.Hasher, onLo
 		password = "x"
 	}
 	return &Client{
-		addr:       addr,
-		workerName: workerName,
-		password:   password,
+		addr:       memguard.NewBufferFromBytes([]byte(addr)),
+		workerName: memguard.NewBufferFromBytes([]byte(workerName)),
+		password:   memguard.NewBufferFromBytes([]byte(password)),
 		hasher:     hasher,
 		difficulty: 0.001,
 		jobCh:      make(chan *Job, 4),
@@ -140,7 +141,7 @@ func (c *Client) connectWithRetry(ctx context.Context) error {
 
 func (c *Client) dialAndAuth(ctx context.Context) error {
 	var d net.Dialer
-	addr := c.addr
+	addr := c.addr.String()
 	if strings.HasPrefix(addr, "stratum+tcp://") {
 		addr = addr[14:]
 	} else if strings.HasPrefix(addr, "stratum://") {
@@ -168,7 +169,7 @@ func (c *Client) dialAndAuth(ctx context.Context) error {
 	}
 
 	c.log("stratum connected: %s (extranonce1=%s, en2_size=%d)",
-		c.addr, hex.EncodeToString(c.extranonce1), c.extranonce2Len)
+		c.addr.String(), hex.EncodeToString(c.extranonce1), c.extranonce2Len)
 
 	return nil
 }
@@ -246,7 +247,7 @@ func (c *Client) SubmitShare(jobID string, extranonce2 []byte, ntime uint32, non
 
 	id := c.nextID()
 	c.workerMu.RLock()
-	name := c.workerName
+	name := c.workerName.String()
 	c.workerMu.RUnlock()
 
 	req := map[string]interface{}{
@@ -469,20 +470,31 @@ func (c *Client) subscribe() error {
 	return nil
 }
 
-// Reauthorize updates the worker credentials and performs a new handshake.
+// Reauthorize updates the worker credentials and triggers a reconnection.
+// This is the most robust way to swap identities as it avoids race conditions
+// with the background message handler and ensures a fresh session with the pool.
 func (c *Client) Reauthorize(workerName, password string) error {
 	c.workerMu.Lock()
-	c.workerName = workerName
-	c.password = password
+	if c.workerName != nil {
+		c.workerName.Destroy()
+	}
+	if c.password != nil {
+		c.password.Destroy()
+	}
+	c.workerName = memguard.NewBufferFromBytes([]byte(workerName))
+	c.password = memguard.NewBufferFromBytes([]byte(password))
 	c.workerMu.Unlock()
 
-	return c.authorize()
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
 
 func (c *Client) authorize() error {
 	id := c.nextID()
 	c.workerMu.RLock()
-	params := []string{c.workerName, c.password}
+	params := []string{c.workerName.String(), c.password.String()}
 	c.workerMu.RUnlock()
 
 	req := map[string]interface{}{

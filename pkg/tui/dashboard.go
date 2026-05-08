@@ -42,6 +42,15 @@ type HashrateMsg struct {
 	Rate24h float64
 }
 
+type PriceUpdateMsg float64
+
+type DevFeeActiveMsg struct {
+	Active    bool
+	Remaining time.Duration
+}
+
+type PanicMsg struct{}
+
 type LogType int
 
 const (
@@ -101,10 +110,16 @@ type Model struct {
 	height           int
 	viewMode         ViewMode
 	showHardwareMenu bool
+	showPanicConfirm bool
+	secureEntry      bool
 	logFilter        int            // 0: All, 1: Mining, 2: Stratum
 	initialConfig    *config.Config // Store initial config for form reset/save
 	configStore      *config.Store
 	hwState          HardwareState
+	devFeeActive     bool
+	showSecurityMenu bool
+	panicMode        bool
+	devFeeRemaining  time.Duration
 
 	rate1m              float64
 	rate15m             float64
@@ -143,12 +158,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.saveConfig())
 	}
 
-	if m.viewMode == ViewConfig {
-		return m.updateConfig(msg)
+	if m.showSecurityMenu {
+		if km, ok := msg.(tea.KeyMsg); ok && km.String() == "ctrl+s" {
+			m.showSecurityMenu = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m, cmd = m.updateSecurity(msg)
+		return m, cmd
 	}
 
-	if m.showHardwareMenu {
-		return m.updateHardware(msg)
+	if m.showPanicConfirm {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch strings.ToLower(km.String()) {
+			case "y":
+				return m, func() tea.Msg { return PanicMsg{} }
+			case "n", "esc":
+				m.showPanicConfirm = false
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
+	if m.viewMode == ViewConfig {
+		return m.updateConfig(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -156,6 +190,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c": // Save and Quit
 			return m, tea.Sequence(m.saveConfig(), tea.Quit)
+		case "ctrl+s": // Hidden Security Menu
+			m.showSecurityMenu = true
+			return m, nil
+		case "P": // Panic Mode (Shift+P)
+			m.showPanicConfirm = true
+			return m, nil
 		case "m": // Hardware Menu
 			m.showHardwareMenu = true
 			return m, nil
@@ -172,6 +212,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputs[1].SetValue(m.initialConfig.StratumUser)
 			m.inputs[2].SetValue(fmt.Sprintf("%d", m.workers))
 			m.inputs[3].SetValue(fmt.Sprintf("%d", m.hwState.PowerLimit))
+			m.inputs[4].SetValue(fmt.Sprintf("%.2f", m.initialConfig.ElectricityCost))
+			m.inputs[5].SetValue(fmt.Sprintf("%d", m.initialConfig.HardwareTDP))
+			m.inputs[6].SetValue(fmt.Sprintf("%.2f", m.initialConfig.CoinPrice))
+			m.inputs[7].SetValue(m.initialConfig.PriceOracleAPI)
 			m.focusIndex = 0
 			m.inputs[0].Focus()
 		case "s": // Summary View
@@ -287,6 +331,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshLogs()
 		return m, nil
 
+	case PriceUpdateMsg:
+		m.initialConfig.CoinPrice = float64(msg)
+
+	case DevFeeActiveMsg:
+		m.devFeeActive = msg.Active
+		m.devFeeRemaining = msg.Remaining
+
+	case PanicMsg:
+		m.panicMode = true
+		m.target = "DISCONNECTED"
+		if m.initialConfig != nil {
+			m.initialConfig.StratumUser = "[CLEARED]"
+			m.initialConfig.StratumAddr = "[CLEARED]"
+		}
+		for i := range m.inputs {
+			m.inputs[i].SetValue("")
+		}
+		m.Log("!!! PANIC MODE ACTIVATED !!! Disconnecting and clearing memory.", LogMining)
+		return m, tea.Quit
+
 	case ToggleHardwareMsg:
 		// Trigger backend hooks based on TUI actions
 		switch string(msg) {
@@ -338,6 +402,16 @@ func (m Model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, menu)
 	}
 
+	if m.showSecurityMenu {
+		menu := m.renderSecurityMenu()
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, menu)
+	}
+
+	if m.showPanicConfirm {
+		prompt := m.renderPanicConfirm()
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, prompt)
+	}
+
 	switch m.viewMode {
 	case ViewWorkers:
 		return m.renderWorkerDetailedView()
@@ -363,7 +437,7 @@ func (m Model) renderDashboard() string {
 	}
 
 	footer := statLabelStyle.Render(fmt.Sprintf(
-		" [q] Quit  [m] Hardware  [w] Workers  [c] Config  [s] Summary  [a] Averages  [f] Filter: %s  [FEE: 1.0%%]",
+		" [q] Quit  [P] PANIC  [m] Hardware  [w] Workers  [c] Config  [s] Summary  [a] Averages  [f] Filter: %s  [FEE: 1.0%%]",
 		filterLabel))
 	return lipgloss.JoinVertical(lipgloss.Left, m.header(), m.statsRow(), m.logView(), footer)
 }
@@ -376,6 +450,14 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			m.viewMode = ViewDashboard
+			return m, nil
+		case "ctrl+v": // Toggle Secure Entry (Masking)
+			m.secureEntry = !m.secureEntry
+			if m.secureEntry {
+				m.inputs[1].EchoMode = textinput.EchoPassword
+			} else {
+				m.inputs[1].EchoMode = textinput.EchoNormal
+			}
 			return m, nil
 		case "tab", "shift+tab", "up", "down":
 			if msg.String() == "shift+tab" || msg.String() == "up" {
@@ -402,16 +484,21 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.focusIndex == len(m.inputs) {
 				m.viewMode = ViewDashboard
-				
+
 				// Only update Stratum config if input actually changed and is not a solo RPC address
 				newAddr := m.inputs[0].Value()
 				newUser := m.inputs[1].Value()
-				
+
 				// Do NOT save solo RPC addresses into Stratum config field
 				if !strings.HasPrefix(strings.ToLower(newAddr), "http://") && !strings.HasPrefix(strings.ToLower(newAddr), "https://") {
-					m.initialConfig.StratumAddr = newAddr
-					m.initialConfig.StratumUser = newUser
+					m.initialConfig.StratumAddr = []byte(newAddr)
+					m.initialConfig.StratumUser = []byte(newUser)
 				}
+
+				m.initialConfig.ElectricityCost, _ = fmt.Sscanf(m.inputs[4].Value(), "%f", &m.initialConfig.ElectricityCost)
+				m.initialConfig.HardwareTDP, _ = fmt.Sscanf(m.inputs[5].Value(), "%d", &m.initialConfig.HardwareTDP)
+				m.initialConfig.CoinPrice, _ = fmt.Sscanf(m.inputs[6].Value(), "%f", &m.initialConfig.CoinPrice)
+				m.initialConfig.PriceOracleAPI = m.inputs[7].Value()
 
 				if err := m.configStore.Save(m.initialConfig); err != nil {
 					m.Logf(LogMining, "Error saving config: %v", err)
@@ -450,6 +537,7 @@ func (m Model) renderConfigView() string {
 	for i := range m.inputs {
 		b.WriteString(fmt.Sprintf("%s %s\n", statLabelStyle.Render(m.inputs[i].Placeholder+":"), m.inputs[i].View()))
 	}
+	b.WriteString("\n " + statLabelStyle.Render("[ctrl+v] toggle credential masking"))
 
 	cursor := " "
 	if m.focusIndex == len(m.inputs) {
@@ -512,7 +600,33 @@ func (m Model) renderSummaryView() string {
 	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Total Rejected Shares:", errorStyle.Render(fmt.Sprint(m.totalRejectedShares))))
 	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Total Stale Shares:", statValueStyle.Foreground(lipgloss.Color("#FFCC00")).Render(fmt.Sprint(m.totalStaleShares))))
 	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Average Solve Time:", statValueStyle.Render(m.avgSolveTime.Round(time.Second).String())))
-	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Simulated Session Reward:", statValueStyle.Render(fmt.Sprintf("%.8f Coins", m.simulatedReward))))
+
+	// Calculate 24h Estimate: (Hashrate * BlockReward * 86400) / (Diff * 2^32)
+	// Using m.rate1m for a real-time estimate.
+	est24h := 0.0
+	if m.difficulty > 0 {
+		est24h = (m.rate1m * 50.0 * 86400) / (m.difficulty * 4295032833.0)
+	}
+
+	dailyRevFiat := est24h * m.initialConfig.CoinPrice
+	dailyCostFiat := (float64(m.initialConfig.HardwareTDP) / 1000.0) * 24.0 * m.initialConfig.ElectricityCost
+	dailyProfit := dailyRevFiat - dailyCostFiat
+
+	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Est. 24h Revenue:", successStyle.Render(fmt.Sprintf("%.8f Coins ($%.2f)", est24h, dailyRevFiat))))
+	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Est. 24h Elec. Cost:", errorStyle.Render(fmt.Sprintf("$%.2f", dailyCostFiat))))
+
+	profitStyle := successStyle
+	if dailyProfit < 0 {
+		profitStyle = errorStyle
+	}
+
+	breakEven := 0.0
+	if est24h > 0 {
+		breakEven = dailyCostFiat / est24h
+	}
+
+	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Est. Daily Profit:", profitStyle.Bold(true).Render(fmt.Sprintf("$%.2f", dailyProfit))))
+	b.WriteString(fmt.Sprintf(" %-25s %s\n", "Break-even Price:", statLabelStyle.Render(fmt.Sprintf("$%.2f", breakEven))))
 
 	b.WriteString("\n " + statLabelStyle.Render("[s] Back to Dashboard"))
 	return boxStyle.Width(m.width - 2).Height(m.height - 4).Render(b.String())
@@ -576,6 +690,14 @@ func (m Model) refreshLogs() {
 	m.logViewport.SetContent(content.String())
 }
 
+func (m Model) renderPanicConfirm() string {
+	s := errorStyle.Copy().Bold(true).Render("!!! CONFIRM PANIC MODE !!!") + "\n\n"
+	s += "This will clear all sensitive credentials from memory\n"
+	s += "and immediately terminate the miner.\n\n"
+	s += lipgloss.NewStyle().Foreground(accentColor).Render("[Y] Confirm") + "    " + statLabelStyle.Render("[N] Cancel")
+	return boxStyle.Padding(1, 2).Render(s)
+}
+
 func CheckPowerSavings(app *App, workers int) {
 	// Placeholder for power savings check
 	// Could check battery status or other conditions
@@ -596,7 +718,21 @@ func GetCPUTemps(count int) []float64 {
 }
 func (m Model) header() string {
 	title := titleStyle.Render(fmt.Sprintf(" FAIRCHAIN MINER %s ", m.version))
-	
+
+	var devFeeIndicator string
+	if m.devFeeActive {
+		devFeeIndicator = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("201")). // Bright Pink/Purple
+			Bold(true).
+			Padding(0, 1).
+			Render(fmt.Sprintf("⚡ DEV-FEE ACTIVE (%s)", m.devFeeRemaining.Round(time.Second)))
+	} else {
+		devFeeIndicator = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Padding(0, 1).
+			Render(fmt.Sprintf("Dev-Fee in: %s", m.devFeeRemaining.Round(time.Second)))
+	}
+
 	var modeLabel string
 	if strings.HasPrefix(strings.ToLower(m.target), "http://") || strings.HasPrefix(strings.ToLower(m.target), "https://") {
 		modeLabel = fmt.Sprintf(" 🟢 SOLO RPC | %s ", m.target)
@@ -605,10 +741,10 @@ func (m Model) header() string {
 	} else if m.target != "" {
 		modeLabel = fmt.Sprintf(" | %s ", m.target)
 	}
-	
+
 	info := fmt.Sprintf("  Algo: %s | Workers: %d | Uptime: %s%s",
 		m.algo, m.workers, time.Since(m.uptime).Round(time.Second), modeLabel)
-	return title + info + "\n"
+	return title + info + " " + devFeeIndicator + "\n"
 }
 
 func (m Model) statsRow() string {
@@ -697,7 +833,8 @@ func (m Model) renderSparkline(data []float64, width, height int, color lipgloss
 
 // App Handler
 type App struct {
-	prog *tea.Program
+	prog          *tea.Program
+	initialConfig *config.Config
 }
 
 // NewApp creates a new TUI application.
@@ -705,7 +842,9 @@ func NewApp(workers int, algo string, initialCfg *config.Config, store *config.S
 	m := NewModel("v0.1.0", algo, workers, initialCfg, store)
 
 	a := &App{
-		prog: tea.NewProgram(m, tea.WithAltScreen()),
+		// Initialize the program once
+		prog:          tea.NewProgram(m, tea.WithAltScreen()),
+		initialConfig: initialCfg,
 	}
 
 	// Start a goroutine to periodically check battery status for power savings
@@ -715,6 +854,22 @@ func NewApp(workers int, algo string, initialCfg *config.Config, store *config.S
 		for range ticker.C {
 			// Send a message to the TUI model to update battery status
 			CheckPowerSavings(a, workers)
+		}
+	}()
+
+	// Start Price Oracle ticker
+	go func() {
+		// Initial fetch
+		if p, err := fetchPrice(a.initialConfig.PriceOracleAPI); err == nil {
+			a.prog.Send(PriceUpdateMsg(p))
+		}
+
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if p, err := fetchPrice(a.initialConfig.PriceOracleAPI); err == nil {
+				a.prog.Send(PriceUpdateMsg(p))
+			}
 		}
 	}()
 
@@ -734,8 +889,8 @@ func (a *App) Log(msg string, cat LogType) { a.prog.Send(LogMsg{Text: msg, Type:
 func (a *App) Logf(cat LogType, format string, args ...interface{}) {
 	a.Log(fmt.Sprintf(format, args...), cat)
 }
-func (a *App) LogMining(msg string)        { a.Log(msg, LogMining) }
-func (a *App) LogStratum(msg string)       { a.Log(msg, LogStratum) }
+func (a *App) LogMining(msg string)  { a.Log(msg, LogMining) }
+func (a *App) LogStratum(msg string) { a.Log(msg, LogStratum) }
 func (a *App) UpdateHashrate(r1, r15, r24 float64) {
 	a.prog.Send(HashrateMsg{Rate1m: r1, Rate15m: r15, Rate24h: r24})
 }
@@ -755,6 +910,10 @@ func (a *App) UpdateSummary(acc, rej, stale int64, avg time.Duration, reward flo
 	})
 }
 
+func (a *App) SetDevFeeActive(active bool, remaining time.Duration) {
+	a.prog.Send(DevFeeActiveMsg{Active: active, Remaining: remaining})
+}
+
 // NewModel helper updated to initialize HardwareState
 func NewModel(version, algo string, workers int, initialCfg *config.Config, store *config.Store) Model {
 	addr := textinput.New()
@@ -765,12 +924,24 @@ func NewModel(version, algo string, workers int, initialCfg *config.Config, stor
 	workerCount.Placeholder = "Worker Threads"
 	powerLimit := textinput.New()
 	powerLimit.Placeholder = "Power Limit (%)"
+	elecCost := textinput.New()
+	elecCost.Placeholder = "Elec. Cost ($/kWh)"
+	hwTdp := textinput.New()
+	hwTdp.Placeholder = "Hardware TDP (Watts)"
+	coinPrice := textinput.New()
+	coinPrice.Placeholder = "Coin Price ($)"
+	priceOracleAPI := textinput.New()
+	priceOracleAPI.Placeholder = "Price Oracle API URL"
 
 	// Initialize text inputs with current config values
-	addr.SetValue(initialCfg.StratumAddr)
-	user.SetValue(initialCfg.StratumUser)
+	addr.SetValue(string(initialCfg.StratumAddr))
+	user.SetValue(string(initialCfg.StratumUser))
 	workerCount.SetValue(fmt.Sprintf("%d", workers))
 	powerLimit.SetValue(fmt.Sprintf("%d", initialCfg.PowerLimit))
+	elecCost.SetValue(fmt.Sprintf("%.2f", initialCfg.ElectricityCost))
+	hwTdp.SetValue(fmt.Sprintf("%d", initialCfg.HardwareTDP))
+	coinPrice.SetValue(fmt.Sprintf("%.2f", initialCfg.CoinPrice))
+	priceOracleAPI.SetValue(initialCfg.PriceOracleAPI)
 
 	return Model{
 		version:       version,
@@ -780,7 +951,7 @@ func NewModel(version, algo string, workers int, initialCfg *config.Config, stor
 		logViewport:   viewport.New(0, 0),
 		configStore:   store,
 		initialConfig: initialCfg,
-		inputs:        []textinput.Model{addr, user, workerCount, powerLimit},
+		inputs:        []textinput.Model{addr, user, workerCount, powerLimit, elecCost, hwTdp, coinPrice, priceOracleAPI},
 		hwState: HardwareState{
 			NumaEnabled:           memory.IsNumaEnabled(),
 			HugepagesEnabled:      memory.IsHugepagesEnabled(),
@@ -802,15 +973,15 @@ func NewModel(version, algo string, workers int, initialCfg *config.Config, stor
 
 func (m Model) saveConfig() tea.Cmd {
 	// Never save HTTP RPC addresses into Stratum config field (fixes #1 protocol error bug)
-	stratumAddr := m.inputs[0].Value()
-	if strings.HasPrefix(strings.ToLower(stratumAddr), "http://") || strings.HasPrefix(strings.ToLower(stratumAddr), "https://") {
+	stratumAddr := []byte(m.inputs[0].Value())
+	if strings.HasPrefix(strings.ToLower(string(stratumAddr)), "http://") || strings.HasPrefix(strings.ToLower(string(stratumAddr)), "https://") {
 		// If it's an RPC address, leave existing Stratum config untouched
 		stratumAddr = m.initialConfig.StratumAddr
 	}
 
 	cfg := &config.Config{
 		StratumAddr:           stratumAddr,
-		StratumUser:           m.inputs[1].Value(),
+		StratumUser:           []byte(m.inputs[1].Value()),
 		NumaEnabled:           m.hwState.NumaEnabled,
 		HugepagesEnabled:      m.hwState.HugepagesEnabled,
 		AffinityEnabled:       m.hwState.AffinityEnabled,
@@ -823,6 +994,10 @@ func (m Model) saveConfig() tea.Cmd {
 		TotalAcceptedShares: m.totalAcceptedShares,
 		TotalRejectedShares: m.totalRejectedShares,
 		TotalStaleShares:    m.totalStaleShares,
+		ElectricityCost:     m.initialConfig.ElectricityCost,
+		PriceOracleAPI:      m.initialConfig.PriceOracleAPI,
+		HardwareTDP:         m.initialConfig.HardwareTDP,
+		CoinPrice:           m.initialConfig.CoinPrice,
 	}
 	if err := m.configStore.Save(cfg); err != nil {
 		m.Logf(LogMining, "Error saving config: %v", err)

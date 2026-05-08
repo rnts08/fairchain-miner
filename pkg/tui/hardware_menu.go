@@ -12,15 +12,16 @@ import (
 )
 
 type HardwareState struct {
-	NumaEnabled      bool
-	HugepagesEnabled bool
-	AffinityEnabled  bool
-	PowerLimit       int
-	PowerSavingsEnabled bool
+	NumaEnabled           bool
+	HugepagesEnabled      bool
+	AffinityEnabled       bool
+	PowerLimit            int
+	PowerSavingsEnabled   bool
 	PowerSavingsThreshold int
-	ThermalLimit     int
-	TurboModeEnabled bool
-	Cursor           int
+	ThermalLimit          int
+	TurboModeEnabled      bool
+	TemplateVerification  bool
+	Cursor                int
 }
 
 type ToggleHardwareMsg string
@@ -35,6 +36,7 @@ func (m Model) renderHardwareMenu() string {
 		fmt.Sprintf("Power Savings Threshold: %d%%", m.hwState.PowerSavingsThreshold),
 		fmt.Sprintf("Thermal Limit: %d°C", m.hwState.ThermalLimit),
 		fmt.Sprintf("[%s] Turbo Mode (Auto-Power)", toggleChar(m.hwState.TurboModeEnabled)),
+		fmt.Sprintf("[%s] Template HMAC Verification", toggleChar(m.hwState.TemplateVerification)),
 	}
 
 	var s string
@@ -68,7 +70,7 @@ func (m Model) updateHardware(msg tea.Msg) (Model, tea.Cmd) {
 				m.hwState.Cursor--
 			}
 		case "down", "j":
-			if m.hwState.Cursor < 7 { // 8 options, 0-7
+			if m.hwState.Cursor < 8 { // 9 options, 0-8
 				m.hwState.Cursor++
 			}
 		case " ":
@@ -88,6 +90,9 @@ func (m Model) updateHardware(msg tea.Msg) (Model, tea.Cmd) {
 			case 7: // Turbo Mode
 				m.hwState.TurboModeEnabled = !m.hwState.TurboModeEnabled
 				return m, func() tea.Msg { return ToggleHardwareMsg("turbo") }
+			case 8: // Template Verification
+				m.hwState.TemplateVerification = !m.hwState.TemplateVerification
+				return m, func() tea.Msg { return ToggleHardwareMsg("template_verification") }
 			}
 		case "right", "l":
 			if m.hwState.Cursor == 3 && m.hwState.PowerLimit < 100 {
